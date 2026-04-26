@@ -10,7 +10,8 @@ export async function DELETE(request: Request, context: any) {
     await assertSameOrigin();
     await verifyCsrf(request);
     await requireAdmin();
-    const id = Number(context.params.id);
+    const { id: rawId } = await context.params;
+    const id = Number(rawId);
     await prisma.inviteCode.deleteMany({ where: { id, usedAt: null } });
     return jsonOk({ ok: true });
   } catch (error) {

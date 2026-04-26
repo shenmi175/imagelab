@@ -11,7 +11,7 @@ export async function DELETE(request: Request, context: any) {
     await assertSameOrigin();
     await verifyCsrf(request);
     const admin = await requireAdmin();
-    const id = context.params.id;
+    const { id } = await context.params;
     const job = await prisma.imageJob.findUnique({ where: { id } });
     if (!job) return jsonOk({ ok: true });
 

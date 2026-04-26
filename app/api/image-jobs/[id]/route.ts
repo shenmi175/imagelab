@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 export async function GET(_request: Request, context: any) {
   try {
     const user = await requireUser();
-    const job = await getAuthorizedJob(context.params.id, user);
+    const { id } = await context.params;
+    const job = await getAuthorizedJob(id, user);
     return jsonOk(publicJob(job));
   } catch (error) {
     return jsonError(error);

@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 export async function GET(_request: Request, context: any) {
   try {
     const user = await requireUser();
-    const job = await getAuthorizedJob(context.params.id, user);
+    const { id } = await context.params;
+    const job = await getAuthorizedJob(id, user);
     if (job.status !== JobStatus.COMPLETED || !job.resultPath) {
       throw new ApiError("IMAGE_NOT_READY", "图片尚未生成完成", 409);
     }

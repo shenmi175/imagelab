@@ -10,7 +10,7 @@ export async function PATCH(request: Request, context: any) {
     await assertSameOrigin();
     await verifyCsrf(request);
     const admin = await requireAdmin();
-    const id = String(context.params.id);
+    const { id } = await context.params;
     const body = await request.json();
 
     const data: { dailyQuota?: number; isDisabled?: boolean } = {};
