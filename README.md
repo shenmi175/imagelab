@@ -27,6 +27,32 @@ QUEUE_BOARD_PASSWORD=首次自动生成或你自己设置的强密码
 ./start.sh
 ```
 
+如果服务器拉取 Docker Hub 镜像超时，例如 `redis:7-alpine` 报 `context deadline exceeded`，这是服务器到 Docker Hub 的网络问题，不是项目代码问题。可以先重试：
+
+```bash
+docker compose pull redis
+./start.sh
+```
+
+如果仍然失败，把 `.env` 里的镜像改成你信任且服务器可访问的镜像仓库地址：
+
+```env
+NODE_IMAGE=你的镜像仓库/library/node:22-bookworm-slim
+POSTGRES_IMAGE=你的镜像仓库/library/postgres:16-alpine
+REDIS_IMAGE=你的镜像仓库/library/redis:7-alpine
+NPM_REGISTRY=https://registry.npmmirror.com/
+```
+
+也可以在一台能访问 Docker Hub 的机器上预先拉取并导出基础镜像，再传到服务器导入：
+
+```bash
+docker pull node:22-bookworm-slim postgres:16-alpine redis:7-alpine
+docker save node:22-bookworm-slim postgres:16-alpine redis:7-alpine -o imagelab-base-images.tar
+scp imagelab-base-images.tar root@你的服务器:/root/imagelab/
+docker load -i imagelab-base-images.tar
+./start.sh
+```
+
 访问：
 
 ```text

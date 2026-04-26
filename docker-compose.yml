@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: image-site-postgres
     environment:
       POSTGRES_USER: image_app
@@ -17,7 +17,7 @@ services:
       - image-site
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: image-site-redis
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -31,7 +31,11 @@ services:
       - image-site
 
   migrate:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: image-site-migrate
     command: sh -c "npx prisma migrate deploy && npm run seed"
     env_file:
@@ -45,7 +49,11 @@ services:
       - image-site
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: image-site-app
     command: npm run start
     env_file:
@@ -68,7 +76,11 @@ services:
       - image-site
 
   worker:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: image-site-worker
     command: npm run worker
     env_file:
@@ -84,7 +96,11 @@ services:
       - image-site
 
   queue-board:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: image-site-queue-board
     command: npm run queue-board
     env_file:

@@ -1,10 +1,14 @@
-FROM node:22-bookworm-slim AS deps
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+
+FROM ${NODE_IMAGE} AS deps
+ARG NPM_REGISTRY
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm config set registry "$NPM_REGISTRY" && npm install
 
-FROM node:22-bookworm-slim AS builder
+FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
@@ -12,7 +16,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*

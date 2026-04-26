@@ -14,6 +14,19 @@ if [ ! -f .env ]; then
   echo "Initial Bull Board password: $QUEUE_BOARD_PASSWORD"
 fi
 
+ensure_env() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q "^${key}=" .env; then
+    printf "\n%s=%s\n" "$key" "$value" >> .env
+  fi
+}
+
+ensure_env "NODE_IMAGE" "node:22-bookworm-slim"
+ensure_env "POSTGRES_IMAGE" "postgres:16-alpine"
+ensure_env "REDIS_IMAGE" "redis:7-alpine"
+ensure_env "NPM_REGISTRY" "https://registry.npmjs.org/"
+
 if grep -q "SUB2API_API_KEY=sk-change-me" .env; then
   echo "Warning: SUB2API_API_KEY is still the placeholder. The site will start, but image generation will fail until you update .env."
 fi
