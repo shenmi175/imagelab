@@ -26,7 +26,7 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, inviteCode, turnstileToken })
       });
-      router.push("/dashboard");
+      router.push("/generate");
     } catch (err) {
       setError(err instanceof Error ? err.message : "注册失败");
       setTurnstileToken("");

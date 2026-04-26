@@ -4,6 +4,8 @@ import { ApiError, requestIpHash, requestUserAgent } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { quotaDate } from "@/lib/time";
 import { enqueuePendingJob } from "@/lib/queue";
+import { jobDurations } from "@/lib/duration";
+import { friendlyErrorMessage, statusLabel } from "@/lib/status-labels";
 
 const GLOBAL_QUEUE_LOCK = 10001;
 const USER_LOCK_BASE = 20000;
@@ -141,15 +143,18 @@ export function publicJob(job: {
   queuedAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
+  errorCode: string | null;
   errorMessage: string | null;
   resultDeletedAt: Date | null;
 }) {
   const urls = imageUrls(job);
+  const durations = jobDurations(job);
   return {
     id: job.id,
     prompt: job.prompt,
     model: job.model,
     status: job.status,
+    statusLabel: statusLabel(job.status),
     size: job.size,
     quality: job.quality,
     attempts: job.attempts,
@@ -157,7 +162,10 @@ export function publicJob(job: {
     queuedAt: job.queuedAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
+    ...durations,
+    errorCode: job.errorCode,
     errorMessage: job.errorMessage,
+    displayError: friendlyErrorMessage(job.errorCode, job.errorMessage),
     imageUrl: urls.imageUrl,
     downloadUrl: urls.downloadUrl
   };

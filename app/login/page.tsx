@@ -25,7 +25,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, turnstileToken })
       });
-      router.push("/dashboard");
+      router.push("/generate");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
       setTurnstileToken("");

@@ -1,7 +1,9 @@
 import { JobStatus } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
+import { jobDurations } from "@/lib/duration";
 import { jsonError, jsonOk } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { getRedis } from "@/lib/redis";
 import { quotaDate } from "@/lib/time";
 
 export const runtime = "nodejs";
@@ -9,14 +11,43 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     await requireAdmin();
-    const [users, todayJobs, queued, running, failed] = await Promise.all([
+    const today = quotaDate();
+    const [users, todayJobs, completedToday, failedToday, queuedJobs, runningJobs, recentCompleted, workerKeys] = await Promise.all([
       prisma.user.count(),
-      prisma.imageJob.count({ where: { quotaDate: quotaDate() } }),
+      prisma.imageJob.count({ where: { quotaDate: today } }),
+      prisma.imageJob.count({ where: { quotaDate: today, status: JobStatus.COMPLETED } }),
+      prisma.imageJob.count({ where: { quotaDate: today, status: JobStatus.FAILED } }),
       prisma.imageJob.count({ where: { status: { in: [JobStatus.PENDING_ENQUEUE, JobStatus.QUEUED] } } }),
       prisma.imageJob.count({ where: { status: JobStatus.RUNNING } }),
-      prisma.imageJob.count({ where: { status: JobStatus.FAILED } })
+      prisma.imageJob.findMany({
+        where: { status: JobStatus.COMPLETED, startedAt: { not: null }, completedAt: { not: null } },
+        orderBy: { completedAt: "desc" },
+        take: 200,
+        select: { createdAt: true, startedAt: true, completedAt: true }
+      }),
+      getRedis().keys("image-site:worker:*:heartbeat").catch(() => [])
     ]);
-    return jsonOk({ users, todayJobs, queued, running, failed });
+
+    const generationDurations = recentCompleted
+      .map((job) => jobDurations(job).generationDurationMs)
+      .filter((value): value is number => typeof value === "number");
+    const queueDurations = recentCompleted
+      .map((job) => jobDurations(job).queueDurationMs)
+      .filter((value): value is number => typeof value === "number");
+    const average = (values: number[]) =>
+      values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+
+    return jsonOk({
+      users,
+      todayJobs,
+      completedToday,
+      failedToday,
+      queuedJobs,
+      runningJobs,
+      activeWorkers: workerKeys.length,
+      averageGenerationDurationMs: average(generationDurations),
+      averageQueueDurationMs: average(queueDurations)
+    });
   } catch (error) {
     return jsonError(error);
   }

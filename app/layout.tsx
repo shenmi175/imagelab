@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppShell } from "@/components/app/AppShell";
+import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -15,23 +15,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN" suppressHydrationWarning>
       <body>
         <ThemeProvider>
-          <div className="shell">
-            <header className="nav">
-              <Link href="/dashboard" className="brand">
-                Image Lab
-              </Link>
-              <div className="nav-actions">
-                <nav className="nav-links" aria-label="主导航">
-                  <Link className="nav-link" href="/generate">生成</Link>
-                  <Link className="nav-link" href="/dashboard">任务</Link>
-                  <Link className="nav-link" href="/admin">管理</Link>
-                </nav>
-                <ThemeToggle />
-              </div>
-            </header>
-            {children}
-          </div>
-          <Toaster richColors position="top-right" />
+          <QueryProvider>
+            <AppShell>{children}</AppShell>
+            <Toaster richColors position="top-right" />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

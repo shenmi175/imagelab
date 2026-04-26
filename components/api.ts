@@ -24,7 +24,8 @@ export type PublicJob = {
   id: string;
   prompt: string;
   model: string;
-  status: string;
+  status: "PENDING_ENQUEUE" | "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED";
+  statusLabel: string;
   size: string;
   quality: string;
   attempts: number;
@@ -32,7 +33,18 @@ export type PublicJob = {
   queuedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
+  enqueueDurationMs?: number | null;
+  queueDurationMs?: number | null;
+  generationDurationMs?: number | null;
+  totalDurationMs?: number | null;
+  errorCode?: string | null;
   errorMessage?: string | null;
+  displayError?: string | null;
   imageUrl?: string | null;
   downloadUrl?: string | null;
+};
+
+export type MeResponse = {
+  user: { id: string; email: string; role: "USER" | "ADMIN"; dailyQuota: number } | null;
+  remainingQuota?: number;
 };

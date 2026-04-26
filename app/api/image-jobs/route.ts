@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client";
+import { JobStatus, UserRole } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
 import { verifyCsrf } from "@/lib/csrf";
 import { env } from "@/lib/env";
@@ -10,16 +10,27 @@ import { validatePrompt, validateQuality, validateSize } from "@/lib/validation"
 
 export const runtime = "nodejs";
 
-export async function GET() {
+const visibleStatuses = new Set(["PENDING_ENQUEUE", "QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELED", "EXPIRED"]);
+
+export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const ipHash = await requestIpHash();
     await rateLimit(`poll:${user.id}:${ipHash}`, env.pollUserMinuteLimit, 60);
 
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    const scope = url.searchParams.get("scope");
+    const statusFilter = status && visibleStatuses.has(status) ? { status: status as JobStatus } : {};
+    const ownerFilter = user.role === UserRole.ADMIN && scope === "all" ? {} : { userId: user.id };
+
     const items = await prisma.imageJob.findMany({
-      where: user.role === UserRole.ADMIN ? {} : { userId: user.id },
+      where: {
+        ...ownerFilter,
+        ...statusFilter
+      },
       orderBy: { createdAt: "desc" },
-      take: 50
+      take: 100
     });
 
     return jsonOk({ items: items.map(publicJob) });

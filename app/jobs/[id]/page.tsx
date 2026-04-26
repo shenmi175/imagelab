@@ -2,62 +2,95 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Copy, RotateCcw } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
-
-const terminalStatuses = new Set(["COMPLETED", "FAILED", "CANCELED", "EXPIRED"]);
+import { Button } from "@/components/ui/button";
+import { JobStatusBadge } from "@/components/job/JobStatusBadge";
+import { JobTimeline } from "@/components/job/JobTimeline";
+import { JobTimer } from "@/components/job/JobTimer";
+import { terminalStatuses } from "@/lib/status-labels";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
-  const [job, setJob] = useState<PublicJob | null>(null);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
 
-  async function load() {
-    try {
-      const data = await apiFetch<PublicJob>(`/api/image-jobs/${params.id}`);
-      setJob(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "加载失败");
+  const jobQuery = useQuery({
+    queryKey: ["job", params.id],
+    queryFn: () => apiFetch<PublicJob>(`/api/image-jobs/${params.id}`),
+    refetchInterval: (query) => {
+      const job = query.state.data as PublicJob | undefined;
+      if (job && terminalStatuses.has(job.status)) return false;
+      if (typeof document === "undefined") return false;
+      return document.visibilityState === "visible" ? 2500 : 10000;
     }
-  }
+  });
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      if (!job || !terminalStatuses.has(job.status)) void load();
-    }, document.visibilityState === "visible" ? 3000 : 15000);
-    return () => clearInterval(timer);
-  }, [params.id, job?.status]);
+  const rerunMutation = useMutation({
+    mutationFn: (job: PublicJob) => apiFetch<PublicJob>(`/api/image-jobs/${job.id}/rerun`, { method: "POST" }),
+    onSuccess: (job) => {
+      toast.success("已重新提交任务");
+      queryClient.setQueryData(["job", job.id], job);
+      window.location.href = `/jobs/${job.id}`;
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "重新生成失败")
+  });
+
+  const job = jobQuery.data;
 
   return (
-    <main className="grid" style={{ paddingBottom: "4rem" }}>
-      <section className="card" style={{ padding: "2rem" }}>
-        <Link className="muted" href="/dashboard">返回任务列表</Link>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: "3.5rem", lineHeight: 1 }}>任务详情</h1>
-        {error ? <p style={{ color: "#9b2c1f" }}>{error}</p> : null}
-        {job ? (
-          <div className="grid two">
+    <main className="page-stack">
+      <section className="workspace-hero card">
+        <div>
+          <Link className="muted" href="/jobs">返回任务列表</Link>
+          <h1>任务详情</h1>
+          <p className="muted">刷新页面后仍会根据 createdAt / startedAt / completedAt 计算耗时。</p>
+        </div>
+        {job ? <JobStatusBadge job={job} /> : null}
+      </section>
+
+      {jobQuery.error ? <p className="error-text">{jobQuery.error instanceof Error ? jobQuery.error.message : "加载失败"}</p> : null}
+
+      {job ? (
+        <section className="job-detail-grid">
+          <div className="card panel-section">
             <div className="grid">
-              <p><span className="status">{job.status}</span></p>
+              <JobTimer job={job} />
               <p>{job.prompt}</p>
               <p className="muted">{job.model} / {job.size} / {job.quality} / attempts {job.attempts}</p>
-              {job.errorMessage ? <p style={{ color: "#9b2c1f" }}>{job.errorMessage}</p> : null}
-              {job.downloadUrl ? <a className="button" href={job.downloadUrl}>下载图片</a> : null}
-            </div>
-            <div>
-              {job.imageUrl ? (
-                <img className="preview" src={job.imageUrl} alt={job.prompt} />
-              ) : (
-                <div className="card" style={{ minHeight: 360, display: "grid", placeItems: "center" }}>
-                  <p className="muted">图片生成中，页面会自动刷新状态。</p>
-                </div>
-              )}
+              {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
+              <JobTimeline job={job} />
+              <div className="action-row">
+                {job.downloadUrl ? <a className="button" href={job.downloadUrl}>下载图片</a> : null}
+                <Button type="button" variant="secondary" onClick={() => navigator.clipboard.writeText(job.prompt)}>
+                  <Copy className="h-4 w-4" />
+                  复制 Prompt
+                </Button>
+                <Button type="button" variant="outline" onClick={() => rerunMutation.mutate(job)}>
+                  <RotateCcw className="h-4 w-4" />
+                  重新生成
+                </Button>
+              </div>
             </div>
           </div>
-        ) : (
+
+          <div className="card result-panel">
+            {job.imageUrl ? (
+              <img className="preview" src={job.imageUrl} alt={job.prompt} />
+            ) : (
+              <div className="empty-preview tall">
+                <RotateCcw className="h-5 w-5" />
+                <p>{job.statusLabel}，页面会自动刷新。</p>
+              </div>
+            )}
+          </div>
+        </section>
+      ) : (
+        <section className="card panel-section">
           <p className="muted">加载中...</p>
-        )}
-      </section>
+        </section>
+      )}
     </main>
   );
 }
