@@ -30,7 +30,16 @@ async function main() {
     });
     console.log(`Created admin user: ${email}`);
   } else {
-    console.log(`Admin user already exists: ${email}`);
+    if (process.env.ADMIN_RESET_PASSWORD === "true") {
+      const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+      await prisma.user.update({
+        where: { id: existingAdmin.id },
+        data: { passwordHash, role: UserRole.ADMIN, isDisabled: false }
+      });
+      console.log(`Reset admin password: ${email}`);
+    } else {
+      console.log(`Admin user already exists: ${email}`);
+    }
   }
 
   const now = new Date();

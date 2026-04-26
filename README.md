@@ -10,12 +10,13 @@ chmod +x start.sh
 ```
 
 首次运行会自动创建 `.env` 并生成 `SESSION_SECRET`。然后编辑 `.env`：
+首次终端输出会显示随机管理员密码。
 
 ```env
 SUB2API_BASE_URL=http://host.docker.internal:8080
 SUB2API_API_KEY=你的Sub2API密钥
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=换成强密码
+ADMIN_PASSWORD=首次自动生成或你自己设置的强密码
 ```
 
 再次运行：
@@ -34,6 +35,15 @@ http://localhost:3005
 
 ```text
 http://localhost:3005/admin
+```
+
+如果已经初始化过数据库后还需要重置管理员密码：
+
+```bash
+# 修改 .env 中 ADMIN_PASSWORD，并临时设置：
+ADMIN_RESET_PASSWORD=true
+docker compose run --rm migrate
+# 重置完成后把 ADMIN_RESET_PASSWORD 改回 false
 ```
 
 ## 本机开发
