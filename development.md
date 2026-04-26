@@ -1,1721 +1,989 @@
-# 图片生成体验站开发文档 v0.2
+# 图片生成体验站开发文档 v0.3
 
-目标：开发一个可部署到服务器、供少量外部用户体验的 AI 图片生成网站。用户登录后提交 prompt，后端创建任务并进入队列，独立 Worker 调用已部署的 Sub2API `gpt-image-2`，生成完成后用户在网页预览和下载图片。
+目标：在当前可生成、可预览、可下载的基础上，把站点从 MVP 页面升级为成熟的图片生成体验站。v0.3 不改变核心后端架构，重点是 UI 布局、交互体验、主题系统、生成计时、图库和任务工作流。
 
-本文档替代 v0.1。v0.2 的重点是补齐上线时最容易出事故的部分：额度并发原子性、DB 与 Redis 入队一致性、Worker 崩溃恢复、图片鉴权访问、限流防刷、Docker 迁移与健康检查。
-
----
-
-## 1. 结论和边界
-
-### 1.1 可行性
-
-方案可行。核心架构必须保持：
+当前已具备：
 
 ```text
-浏览器
-  -> 本站 Next.js API
-  -> PostgreSQL 记录任务和额度
-  -> Redis/BullMQ 队列
-  -> 独立 Worker
-  -> 内网 Sub2API
-  -> 本地私有图片目录
-  -> 鉴权 API 预览/下载
-```
-
-禁止做成：
-
-```text
-浏览器 -> Sub2API
-浏览器 -> 静态公开图片目录
-HTTP 请求同步等待图片生成完成
-```
-
-### 1.2 MVP 必须实现
-
-```text
+Better Auth 登录 / 注册 / 会话
 邀请码注册
-登录 / 退出 / 当前用户
-每日额度
-用户级并发限制
-全站队列上限
-异步图片任务
-任务状态页轮询
-图片预览和下载
-管理员用户管理
-管理员任务管理
-邀请码管理
-清理过期图片和 session
-基础限流
-Docker 部署
+Cloudflare Turnstile 可选接入
+PostgreSQL + Prisma
+Redis + BullMQ
+Worker 异步调用 Sub2API
+私有图片存储
+鉴权预览和下载
+Bull Board 队列看板
+Docker Compose 一键启动
 ```
 
-### 1.3 MVP 暂不实现
+v0.3 的核心方向：
 
 ```text
-支付充值
-公开图库
-OAuth 登录
-邮箱验证
-图片编辑 / 图生图
-多模型商城
-多语言
-复杂积分系统
-对象存储
+引入成熟组件体系
+重构应用布局为工作台
+生成页改为专业创作面板
+增加图库页和任务详情抽屉
+增加白天 / 黑夜两套主题背景
+生成中展示实时计时
+完成后展示排队耗时、生成耗时、总耗时
+把错误和队列状态转成用户可理解的提示
 ```
 
 ---
 
-## 2. OpenAI / Sub2API 接口约束
+## 1. 版本边界
 
-当前项目通过已部署的 Sub2API 调用 OpenAI 兼容的图片生成接口：
-
-```http
-POST {SUB2API_BASE_URL}/v1/images/generations
-Authorization: Bearer {SUB2API_API_KEY}
-Content-Type: application/json
-```
-
-请求体固定由服务端生成：
-
-```json
-{
-  "model": "gpt-image-2",
-  "prompt": "A cute orange cat astronaut on the moon.",
-  "size": "1024x1024",
-  "quality": "high",
-  "output_format": "png"
-}
-```
-
-实现要求：
+### 1.1 v0.3 要做
 
 ```text
-普通用户不能传 model
-普通用户不能传 n
-MVP 不主动发送 n，依赖上游默认生成一张图
-如果你的 Sub2API 明确要求或确认支持 n，再由服务端固定 n=1
-MVP 固定 output_format=png
-MVP 不传 background=transparent，gpt-image-2 不支持透明背景
-读取响应 data[0].b64_json
-base64 解码后保存为 PNG 文件
-记录上游 HTTP status、request id、错误体前 1000 字符
-日志中禁止出现 SUB2API_API_KEY
+UI 组件体系升级。
+App Shell：侧边栏、顶部栏、用户菜单、额度状态。
+Generate Workspace：prompt、参数、模板、任务状态、结果预览集中在一个页面。
+Gallery：展示历史生成图片，支持状态筛选、下载、复制 prompt、重新生成。
+Job Detail Drawer：任务详情从独立简陋页升级为详情抽屉或弹窗。
+Day / Night 两套主题，可手动切换并持久化。
+生成任务计时：排队时间、生成时间、总耗时。
+更清晰的 Loading、Skeleton、Toast、错误提示。
+后台管理 UI 分区优化。
 ```
 
-尺寸策略：
+### 1.2 v0.3 暂不做
 
 ```text
-OpenAI 官方文档说明 gpt-image-2 支持更灵活的尺寸。
-MVP 为了控成本和控 UI，只开放以下三个尺寸：
-1024x1024
-1536x1024
-1024x1536
+支付充值。
+公开社区广场。
+图生图 / 局部重绘。
+多模型计价。
+团队空间。
+对象存储迁移。
+移动端原生 App。
 ```
 
-质量策略：
+### 1.3 后端原则
 
 ```text
-允许 low、medium、high。
-默认 high。
-如果成本压力明显，可把新用户默认值改成 medium。
+浏览器仍然不能直接调用 Sub2API。
+SUB2API_API_KEY 仍然只在服务端和 Worker 使用。
+图片仍然不能静态公开。
+任务仍然异步执行，不让 HTTP 请求等待图片生成完成。
+额度、并发和队列一致性仍然由数据库事务和 Outbox 保证。
 ```
 
 ---
 
-## 3. 技术栈
+## 2. 推荐 UI 技术栈
+
+### 2.1 组件体系
+
+采用：
 
 ```text
-框架：Next.js App Router + TypeScript
-数据库：PostgreSQL 16
-ORM：Prisma
-队列：Redis 7 + BullMQ
-密码哈希：argon2id
-样式：Tailwind CSS
-图片存储：服务器本地私有目录
-反向代理：Nginx
-部署：Docker Compose
-上游：Sub2API
+shadcn/ui
+Radix UI primitives
+Tailwind CSS
+lucide-react icons
+sonner toast
+next-themes
+TanStack Query
+react-hook-form
+zod
 ```
 
 选择理由：
 
 ```text
-Next.js 适合同时承载前端页面和 API。
-PostgreSQL 适合做额度、任务状态、审计日志的强一致记录。
-Redis/BullMQ 适合做异步任务和并发控制。
-Worker 独立进程能避免图片生成阻塞 Web 请求。
-本地存储足够支撑小规模体验站，后续再迁移对象存储。
+shadcn/ui 不是黑盒组件库，组件代码进入仓库，方便改成自己的品牌风格。
+Radix 提供可访问性基础，适合 Dialog、Dropdown、Tabs、Tooltip、Popover。
+Tailwind 已在项目中使用，迁移成本低。
+next-themes 适合 Next.js 主题切换，并能减少 hydration 问题。
+TanStack Query 适合任务轮询、缓存、重试和状态同步。
+react-hook-form + zod 适合生成参数、登录注册、后台表单统一校验。
+```
+
+第一批建议安装组件：
+
+```text
+button
+input
+textarea
+select
+card
+badge
+tabs
+dialog
+drawer 或 sheet
+dropdown-menu
+tooltip
+popover
+separator
+skeleton
+progress
+toast / sonner
+avatar
+scroll-area
 ```
 
 ---
 
-## 4. 核心风险和解决方案
+## 3. 信息架构
 
-### 4.1 额度和并发必须原子化
+### 3.1 Public 区
 
-问题：如果只是“先查额度，再创建任务”，用户并发提交多个请求时可能绕过每日额度和单用户 active job 限制。
-
-解决方案：
+页面：
 
 ```text
-创建任务时开启 PostgreSQL transaction。
-事务内先拿全局队列锁和用户锁。
-在同一个事务里检查：
-用户是否禁用
-今日已计费任务数
-用户 active job 数
-全站 QUEUED/PENDING_ENQUEUE 数
-然后创建 ImageJob 和 QueueOutbox。
-提交失败则不创建任务。
-遇到 serialization conflict 或 lock timeout，返回 409/429，让前端提示稍后重试。
+/login
+/register
 ```
 
-锁策略：
-
-```sql
--- 全局队列创建锁，避免 MAX_QUEUE_LENGTH 竞态
-SELECT pg_advisory_xact_lock(10001);
-
--- 用户级锁，避免同一用户并发绕过额度
-SELECT pg_advisory_xact_lock(20000 + $userId);
-```
-
-说明：体验站规模小，全局创建锁的性能成本可以接受，换来实现简单和结果稳定。
-
-### 4.2 DB 和 Redis 入队必须可恢复
-
-问题：DB 任务创建成功后，如果进程在写 Redis 队列前崩溃，会出现“数据库有任务，但队列没有任务”的孤儿任务。
-
-解决方案：使用 Outbox 模式。
+后续可增加：
 
 ```text
-创建任务事务内：
-ImageJob.status = PENDING_ENQUEUE
-创建 QueueOutbox(imageJobId)
-
-事务提交后：
-调用 enqueuePendingJob(imageJobId)
-BullMQ jobId 固定使用 imageJobId
-入队成功后把 ImageJob.status 改为 QUEUED，并删除 QueueOutbox
-
-后台 dispatcher：
-每 10 秒扫描 QueueOutbox
-对未入队任务重复调用 enqueuePendingJob
-由于 BullMQ jobId=imageJobId，重复入队是幂等的
+/landing 或 /
 ```
 
-### 4.3 Worker 崩溃后任务必须能恢复
-
-问题：Worker 把任务设为 RUNNING 后崩溃，任务可能永久卡在 RUNNING。
-
-解决方案：
+Landing 页面内容：
 
 ```text
-BullMQ attempts 设为 1，不依赖自动重试修改业务状态。
-业务层自己维护 attempts、workerId、lockedAt、lockExpiresAt。
-Worker 只领取 status=QUEUED 的任务。
-领取时原子更新为 RUNNING。
-Worker 正常失败时按错误类型决定 FAILED 或重新 QUEUED。
-Reconciler 定时扫描过期 RUNNING 任务。
-RUNNING 且 lockExpiresAt < now 且 attempts < MAX_JOB_ATTEMPTS，则改回 QUEUED 并重新入队。
-RUNNING 且 attempts >= MAX_JOB_ATTEMPTS，则标记 FAILED。
+产品定位：私有 AI 图片生成体验站。
+示例图展示。
+支持尺寸和质量说明。
+邀请码注册入口。
+使用规则。
 ```
 
-任务领取必须用条件更新：
+### 3.2 App 区
 
-```sql
-UPDATE "ImageJob"
-SET status = 'RUNNING',
-    attempts = attempts + 1,
-    workerId = $workerId,
-    lockedAt = now(),
-    lockExpiresAt = now() + interval '15 minutes',
-    startedAt = COALESCE(startedAt, now())
-WHERE id = $imageJobId
-  AND status = 'QUEUED'
-RETURNING *;
-```
-
-如果返回 0 行，Worker 必须直接结束，不得生成图片。
-
-### 4.4 图片不能静态公开
-
-问题：如果把 `/generated` 直接暴露给公网，知道路径的人可以绕过权限下载别人的图片。
-
-解决方案：
+登录后使用统一 `AppLayout`：
 
 ```text
-图片保存到私有目录。
-不配置 public static 暴露 storage。
-预览走 GET /api/image-jobs/:id/image。
-下载走 GET /api/image-jobs/:id/download。
-两个接口都必须检查 session。
-普通用户只能访问自己的任务。
-管理员可以访问所有任务。
-文件路径只保存在数据库，不返回绝对路径。
+左侧 Sidebar：
+  生成
+  图库
+  任务
+  管理员入口，仅 ADMIN 显示
+
+顶部 Topbar：
+  当前额度
+  当前队列状态
+  Day / Night 主题切换
+  用户菜单
+
+主内容区：
+  根据路由显示工作台、图库、任务、后台
 ```
 
-MVP 由 Next.js API stream 文件即可。后续图片量变大时，再用 Nginx `X-Accel-Redirect` 提升性能，仍然保持 private internal location。
-
-### 4.5 公网站点必须第一版就限流
-
-问题：邀请码一旦泄露，免费站很容易被批量注册、撞库登录或刷任务。
-
-解决方案：
+路由建议：
 
 ```text
-注册接口按 IP 限流。
-登录接口按 IP + email 限流。
-创建任务按 userId + IP 限流。
-任务轮询按 userId 限流。
-管理员接口按 admin userId 限流。
-生产环境建议第一版就接 Cloudflare Turnstile 到注册和登录页。
+/generate          生成工作台
+/gallery           图片图库
+/jobs              任务列表
+/jobs/:id          任务详情，保留直接访问能力
+/admin             管理后台
 ```
 
-### 4.6 Docker 必须包含迁移和健康检查
+### 3.3 Admin 区
 
-问题：`depends_on` 只保证容器启动顺序，不保证 PostgreSQL/Redis 已可用，也不会自动执行 Prisma migration。
-
-解决方案：
+后台仍然放在主应用内，但视觉上区分普通用户工作台：
 
 ```text
-compose 增加 migrate service。
-postgres 和 redis 配置 healthcheck。
-app 和 worker 依赖 migrate 成功完成。
-启动前执行 prisma generate。
-生产迁移使用 prisma migrate deploy，不使用 migrate dev。
+概览：今日任务、成功率、失败率、队列长度、活跃 Worker。
+用户：搜索、禁用、额度调整。
+邀请码：生成、复制、使用状态。
+任务：失败原因、用户、耗时、删除图片。
+队列：外链到 Bull Board。
 ```
 
 ---
 
-## 5. 环境变量
+## 4. 视觉方向
 
-`.env.example`：
+当前 UI 偏 MVP，下一版需要形成明确的“图像实验室 / 创作工作台”风格。
 
-```env
-# App
-NODE_ENV=production
-APP_URL=https://image.example.com
-TRUST_PROXY=true
-SESSION_SECRET=change-to-64-random-bytes
-SESSION_COOKIE_NAME=image_site_session
-SESSION_TTL_DAYS=14
-
-# Database
-DATABASE_URL=postgresql://image_app:change-me@postgres:5432/image_app
-
-# Redis / BullMQ
-REDIS_URL=redis://redis:6379
-QUEUE_NAME=image-generation
-
-# Sub2API
-SUB2API_BASE_URL=http://sub2api:8080
-SUB2API_API_KEY=sk-change-me
-IMAGE_MODEL=gpt-image-2
-UPSTREAM_TIMEOUT_SECONDS=900
-
-# Image defaults
-DEFAULT_IMAGE_SIZE=1024x1024
-DEFAULT_IMAGE_QUALITY=high
-DEFAULT_IMAGE_FORMAT=png
-MAX_PROMPT_LENGTH=2000
-
-# Queue and worker limits
-MAX_GLOBAL_CONCURRENCY=2
-MAX_QUEUE_LENGTH=50
-MAX_USER_ACTIVE_JOBS=1
-MAX_JOB_ATTEMPTS=2
-JOB_LOCK_SECONDS=900
-RUNNING_JOB_STALE_SECONDS=960
-OUTBOX_DISPATCH_INTERVAL_SECONDS=10
-RECONCILE_INTERVAL_SECONDS=60
-
-# User limits
-DEFAULT_DAILY_QUOTA=3
-ADMIN_BYPASS_DAILY_QUOTA=true
-
-# Rate limits
-RATE_LIMIT_REGISTER_IP_HOUR=3
-RATE_LIMIT_LOGIN_IP_MINUTE=10
-RATE_LIMIT_LOGIN_EMAIL_HOUR=20
-RATE_LIMIT_CREATE_JOB_USER_MINUTE=3
-RATE_LIMIT_POLL_USER_MINUTE=60
-
-# Storage
-IMAGE_STORAGE_DIR=/app/storage/generated
-IMAGE_RETENTION_DAYS=3
-
-# Admin seed
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=change-me-before-deploy
-
-# Optional Turnstile
-TURNSTILE_SITE_KEY=
-TURNSTILE_SECRET_KEY=
-```
-
-生产要求：
+### 4.1 设计关键词
 
 ```text
-SUB2API_API_KEY 只允许后端和 Worker 使用。
-任何 NEXT_PUBLIC_* 变量都不能包含密钥。
-SESSION_SECRET 至少 32 字节随机值，建议 64 字节。
-ADMIN_PASSWORD 首次部署后必须修改或删除 seed 默认密码。
+成熟
+清晰
+强视觉
+低干扰
+有创作感
+有结果展示
+移动端可用
+```
+
+### 4.2 不采用的方向
+
+```text
+不要默认白底表单堆叠。
+不要把所有页面都做成相同 card。
+不要依赖浏览器默认字体。
+不要只用单色背景。
+不要在生成中只显示“加载中”。
+不要失败时只显示“服务器错误”。
+```
+
+### 4.3 推荐视觉结构
+
+```text
+背景使用大面积渐变、柔和光斑、细噪点或网格纹理。
+主内容使用半透明面板，但避免过度玻璃拟态。
+结果图片区域要足够大，优先展示成果。
+参数设置放在侧栏，避免打断 prompt 输入。
+状态用 Badge、Progress、Timeline 表示。
+移动端改为单列，参数使用 Sheet 展开。
 ```
 
 ---
 
-## 6. 数据库设计
+## 5. Day / Night 主题系统
 
-使用 Prisma。核心 schema 如下，字段名可按实现微调，但语义不能丢。
+### 5.1 功能要求
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
+```text
+用户可在白天和黑夜两种主题之间切换。
+主题选择持久化到 localStorage。
+刷新页面后保持用户选择。
+切换时背景、文字、卡片、边框、按钮、状态色全部同步变化。
+主题切换按钮放在 Topbar。
+登录页和注册页也使用同一主题系统。
+```
+
+### 5.2 实现建议
+
+使用 `next-themes`，但不使用通用的 `light/dark` 命名，使用业务更明确的：
+
+```text
+day
+night
+```
+
+Provider 设计：
+
+```tsx
+<ThemeProvider
+  attribute="data-theme"
+  defaultTheme="day"
+  themes={["day", "night"]}
+  disableTransitionOnChange
+>
+  {children}
+</ThemeProvider>
+```
+
+根布局：
+
+```text
+html 添加 suppressHydrationWarning。
+body 不直接写死背景颜色，而是使用 CSS variables。
+```
+
+### 5.3 CSS Token
+
+使用语义变量，不在组件里写死颜色：
+
+```css
+:root,
+[data-theme="day"] {
+  --bg: #f5ead8;
+  --bg-soft: #fff7ea;
+  --panel: rgba(255, 250, 238, 0.84);
+  --text: #1f1b16;
+  --text-muted: #786f62;
+  --line: rgba(57, 43, 27, 0.14);
+  --primary: #b54728;
+  --primary-foreground: #fff8ea;
+  --accent: #2e6f68;
+  --success: #2e6f68;
+  --warning: #b97921;
+  --danger: #9b2c1f;
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum UserRole {
-  USER
-  ADMIN
-}
-
-enum JobStatus {
-  PENDING_ENQUEUE
-  QUEUED
-  RUNNING
-  COMPLETED
-  FAILED
-  CANCELED
-  EXPIRED
-}
-
-enum OutboxStatus {
-  PENDING
-  PROCESSING
-  DONE
-  FAILED
-}
-
-model User {
-  id           Int        @id @default(autoincrement())
-  email        String     @unique
-  passwordHash String
-  role         UserRole   @default(USER)
-  dailyQuota   Int        @default(3)
-  isDisabled   Boolean    @default(false)
-
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  sessions     Session[]
-  imageJobs    ImageJob[]
-  usageLogs    UsageLog[]
-}
-
-model Session {
-  id         String   @id @default(cuid())
-  userId     Int
-  tokenHash  String   @unique
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  lastSeenAt DateTime?
-
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-}
-
-model InviteCode {
-  id         Int      @id @default(autoincrement())
-  code       String   @unique
-  usedById   Int?
-  usedAt     DateTime?
-  expiresAt  DateTime?
-  createdAt  DateTime @default(now())
-  createdById Int?
-
-  @@index([usedById])
-  @@index([expiresAt])
-}
-
-model ImageJob {
-  id            String    @id @default(cuid())
-  userId        Int
-
-  model         String
-  prompt        String
-  size          String
-  quality       String
-  outputFormat  String
-
-  status        JobStatus @default(PENDING_ENQUEUE)
-  queueJobId    String?   @unique
-
-  attempts      Int       @default(0)
-  workerId      String?
-  lockedAt      DateTime?
-  lockExpiresAt DateTime?
-
-  resultPath    String?
-  resultMime    String?
-  resultBytes   Int?
-  resultDeletedAt DateTime?
-
-  errorCode     String?
-  errorMessage  String?
-  upstreamStatus Int?
-  upstreamRequestId String?
-
-  quotaDate     String
-  quotaCharged  Boolean   @default(true)
-  quotaRefundedAt DateTime?
-
-  requestIpHash String?
-  userAgent     String?
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  queuedAt      DateTime?
-  startedAt     DateTime?
-  completedAt   DateTime?
-
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  usageLogs     UsageLog[]
-  outbox        QueueOutbox?
-
-  @@index([userId, createdAt])
-  @@index([userId, status])
-  @@index([status, createdAt])
-  @@index([status, lockExpiresAt])
-  @@index([quotaDate, userId])
-}
-
-model QueueOutbox {
-  id          String       @id @default(cuid())
-  imageJobId  String       @unique
-  status      OutboxStatus @default(PENDING)
-  attempts    Int          @default(0)
-  lastError   String?
-  nextRunAt   DateTime     @default(now())
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  imageJob    ImageJob     @relation(fields: [imageJobId], references: [id], onDelete: Cascade)
-
-  @@index([status, nextRunAt])
-}
-
-model UsageLog {
-  id          Int       @id @default(autoincrement())
-  userId      Int
-  imageJobId  String?
-  action      String
-  status      String
-  detail      String?
-  createdAt   DateTime  @default(now())
-
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  imageJob    ImageJob? @relation(fields: [imageJobId], references: [id], onDelete: SetNull)
-
-  @@index([userId, createdAt])
-  @@index([imageJobId])
+[data-theme="night"] {
+  --bg: #0d1110;
+  --bg-soft: #141b1a;
+  --panel: rgba(18, 24, 23, 0.86);
+  --text: #f4efe6;
+  --text-muted: #a99f91;
+  --line: rgba(244, 239, 230, 0.13);
+  --primary: #f08a5d;
+  --primary-foreground: #1b100b;
+  --accent: #72d0c6;
+  --success: #72d0c6;
+  --warning: #e4b866;
+  --danger: #ff8b7d;
 }
 ```
 
-说明：
+背景变量：
+
+```css
+[data-theme="day"] body {
+  background:
+    radial-gradient(circle at top left, rgba(181, 71, 40, 0.22), transparent 32rem),
+    radial-gradient(circle at bottom right, rgba(46, 111, 104, 0.18), transparent 36rem),
+    linear-gradient(135deg, #fbf4e7 0%, #eadabe 100%);
+}
+
+[data-theme="night"] body {
+  background:
+    radial-gradient(circle at top left, rgba(114, 208, 198, 0.18), transparent 30rem),
+    radial-gradient(circle at bottom right, rgba(240, 138, 93, 0.14), transparent 36rem),
+    linear-gradient(135deg, #0b0f0e 0%, #17211f 100%);
+}
+```
+
+### 5.4 验收标准
 
 ```text
-quotaDate 使用站点业务时区日期，例如 Asia/Hong_Kong 的 YYYY-MM-DD。
-quotaCharged=true 且 quotaRefundedAt=null 的任务计入每日额度。
-requestIpHash 用 HMAC-SHA256(IP, SESSION_SECRET) 保存，避免明文长期存 IP。
-queueJobId 固定等于 imageJob.id，确保 BullMQ 幂等入队。
+切换主题不刷新页面。
+切换主题没有明显闪屏。
+所有页面可读性合格。
+夜间主题下图片预览边框、按钮、输入框都清晰。
+移动端也能切换主题。
 ```
 
 ---
 
-## 7. 认证和会话
+## 6. 生成计时和耗时展示
 
-### 7.1 密码
+### 6.1 目标
 
-```text
-使用 argon2id。
-密码最少 8 字符。
-登录失败不返回“邮箱不存在”或“密码错误”的区别。
-```
-
-### 7.2 Session
+用户提交任务后必须明确知道：
 
 ```text
-登录成功生成 32 字节随机 token。
-数据库只保存 sha256(token) 或 HMAC(token)。
-浏览器保存 HttpOnly cookie。
-cookie 设置 Secure、HttpOnly、SameSite=Lax。
-生产环境只允许 HTTPS。
-退出登录时删除当前 session。
-清理任务定期删除过期 session。
+任务是否已创建。
+当前是否在排队。
+当前是否正在生成。
+已经等待了多久。
+真正生成耗时多久。
+总共耗时多久。
 ```
 
-### 7.3 CSRF
+### 6.2 现有字段
 
-因为使用 cookie 鉴权，所有会改变状态的接口都要做 CSRF 防护：
+当前 `ImageJob` 已有足够字段，不需要数据库迁移：
 
 ```text
-GET /api/auth/csrf 返回 csrf token。
-前端把 token 放到 X-CSRF-Token。
-服务端校验 token 与 session 绑定。
-SameSite=Lax 不能替代 CSRF token。
+createdAt
+queuedAt
+startedAt
+completedAt
+status
 ```
 
-MVP 如果想减少实现量，至少对所有 POST/PATCH/DELETE 检查 `Origin` 和 `Host` 一致，但最终仍建议实现 CSRF token。
-
----
-
-## 8. API 设计
-
-统一错误格式：
-
-```json
-{
-  "error": "ERROR_CODE",
-  "message": "用户可读错误信息"
-}
-```
-
-常见错误码：
+耗时计算：
 
 ```text
-UNAUTHORIZED
-FORBIDDEN
-USER_DISABLED
-INVALID_INPUT
-CSRF_FAILED
-RATE_LIMITED
-DAILY_QUOTA_EXCEEDED
-USER_ACTIVE_JOB_LIMIT
-QUEUE_FULL
-JOB_NOT_FOUND
-IMAGE_NOT_READY
-IMAGE_EXPIRED
-GENERATION_FAILED
-SUB2API_UNAVAILABLE
+排队耗时 = startedAt - createdAt
+生成耗时 = completedAt - startedAt
+总耗时 = completedAt - createdAt
+当前等待时间 = now - createdAt，适用于 PENDING_ENQUEUE / QUEUED
+当前生成时间 = now - startedAt，适用于 RUNNING
 ```
 
-### 8.1 Auth API
+如果 `queuedAt` 比 `createdAt` 更适合展示，也可以增加：
 
 ```text
-POST /api/auth/register
-POST /api/auth/login
-POST /api/auth/logout
-GET  /api/auth/me
-GET  /api/auth/csrf
+入队耗时 = queuedAt - createdAt
+队列等待 = startedAt - queuedAt
 ```
 
-注册逻辑：
+### 6.3 API 返回建议
 
-```text
-检查限流和 Turnstile。
-检查 email 格式。
-检查密码长度。
-检查邀请码存在、未使用、未过期。
-argon2id 哈希密码。
-事务内创建用户并标记邀请码 used。
-创建 session。
-设置 cookie。
-```
-
-登录逻辑：
-
-```text
-检查限流和 Turnstile。
-查找用户。
-校验密码。
-检查用户未禁用。
-创建 session。
-设置 cookie。
-记录登录成功或失败日志。
-```
-
-### 8.2 Image Job API
-
-#### POST `/api/image-jobs`
-
-请求：
-
-```json
-{
-  "prompt": "A detailed infographic about an endangered snow leopard...",
-  "size": "1024x1024",
-  "quality": "high"
-}
-```
-
-校验：
-
-```text
-必须登录。
-用户不能被禁用。
-通过 CSRF。
-通过 userId + IP 限流。
-prompt trim 后非空。
-prompt 长度 <= MAX_PROMPT_LENGTH。
-size 只能是 1024x1024、1536x1024、1024x1536。
-quality 只能是 low、medium、high。
-model、outputFormat、n 由服务端强制设置。
-```
-
-创建任务事务：
-
-```text
-BEGIN
-拿全局 advisory lock。
-拿用户 advisory lock。
-重新读取用户并检查 isDisabled。
-统计今日计费任务数。
-检查 dailyQuota。
-统计用户 active job：PENDING_ENQUEUE、QUEUED、RUNNING。
-检查 MAX_USER_ACTIVE_JOBS。
-统计全站等待任务：PENDING_ENQUEUE、QUEUED。
-检查 MAX_QUEUE_LENGTH。
-创建 ImageJob(status=PENDING_ENQUEUE, quotaCharged=true)。
-创建 QueueOutbox(imageJobId)。
-COMMIT
-事务提交后尝试 enqueuePendingJob(imageJobId)。
-返回 job id。
-```
-
-响应：
-
-```json
-{
-  "id": "clxxx",
-  "status": "PENDING_ENQUEUE",
-  "message": "任务已创建，正在进入队列"
-}
-```
-
-如果提交后马上入队成功，可以返回：
-
-```json
-{
-  "id": "clxxx",
-  "status": "QUEUED",
-  "message": "任务已加入队列"
-}
-```
-
-#### GET `/api/image-jobs`
-
-返回当前用户任务列表，管理员可传 `userId` 查看指定用户。
-
-响应字段：
-
-```json
-{
-  "items": [
-    {
-      "id": "clxxx",
-      "prompt": "...",
-      "model": "gpt-image-2",
-      "status": "COMPLETED",
-      "size": "1024x1024",
-      "quality": "high",
-      "createdAt": "...",
-      "completedAt": "...",
-      "imageUrl": "/api/image-jobs/clxxx/image",
-      "downloadUrl": "/api/image-jobs/clxxx/download"
-    }
-  ]
-}
-```
-
-#### GET `/api/image-jobs/:id`
-
-普通用户只能读取自己的任务，管理员可以读取任意任务。
-
-响应：
-
-```json
-{
-  "id": "clxxx",
-  "status": "RUNNING",
-  "prompt": "...",
-  "model": "gpt-image-2",
-  "size": "1024x1024",
-  "quality": "high",
-  "attempts": 1,
-  "createdAt": "...",
-  "queuedAt": "...",
-  "startedAt": "...",
-  "completedAt": null,
-  "imageUrl": null,
-  "downloadUrl": null,
-  "errorMessage": null
-}
-```
-
-#### GET `/api/image-jobs/:id/image`
-
-用于网页预览：
-
-```text
-必须登录。
-普通用户只能访问自己的任务。
-管理员可以访问任意任务。
-任务必须 COMPLETED。
-resultPath 必须存在且未过期。
-返回 Content-Type: image/png。
-返回 Content-Disposition: inline。
-设置 Cache-Control: private, max-age=300。
-```
-
-#### GET `/api/image-jobs/:id/download`
-
-用于下载：
-
-```text
-权限同 image 接口。
-返回 Content-Disposition: attachment; filename="{jobId}.png"。
-记录 UsageLog action=DOWNLOAD。
-```
-
-### 8.3 Admin API
-
-```text
-GET    /api/admin/users
-PATCH  /api/admin/users/:id
-GET    /api/admin/image-jobs
-GET    /api/admin/image-jobs/:id
-DELETE /api/admin/image-jobs/:id
-GET    /api/admin/invite-codes
-POST   /api/admin/invite-codes
-DELETE /api/admin/invite-codes/:id
-GET    /api/admin/stats
-```
-
-管理员操作要求：
-
-```text
-所有接口必须检查 role=ADMIN。
-禁用用户后，该用户不能登录，也不能创建新任务。
-禁用用户不自动取消已运行任务，管理员可单独取消。
-删除任务时同时删除图片文件，并记录 UsageLog。
-修改 dailyQuota 必须记录操作日志。
-```
-
----
-
-## 9. 队列设计
-
-队列名称：
-
-```text
-image-generation
-```
-
-BullMQ job payload：
+`publicJob()` 增加计算字段：
 
 ```ts
-type ImageGenerationPayload = {
-  imageJobId: string;
+type PublicJob = {
+  id: string;
+  status: JobStatus;
+  createdAt: Date;
+  queuedAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  queueDurationMs: number | null;
+  generationDurationMs: number | null;
+  totalDurationMs: number | null;
 };
 ```
 
-BullMQ job options：
-
-```ts
-{
-  jobId: imageJobId,
-  attempts: 1,
-  removeOnComplete: { age: 3600, count: 1000 },
-  removeOnFail: { age: 86400, count: 5000 }
-}
-```
-
-原因：
+服务端计算规则：
 
 ```text
-jobId=imageJobId 让重复入队幂等。
-attempts=1 避免 BullMQ 自动重试和数据库业务状态冲突。
-业务重试由 ImageJob.attempts + Reconciler 控制。
+如果 startedAt 存在，queueDurationMs = startedAt - createdAt。
+如果 startedAt 和 completedAt 都存在，generationDurationMs = completedAt - startedAt。
+如果 completedAt 存在，totalDurationMs = completedAt - createdAt。
+如果字段不存在，返回 null。
 ```
 
-### 9.1 enqueuePendingJob
-
-伪代码：
-
-```ts
-async function enqueuePendingJob(imageJobId: string) {
-  const job = await prisma.imageJob.findUnique({ where: { id: imageJobId } });
-  if (!job) return;
-  if (!["PENDING_ENQUEUE", "QUEUED"].includes(job.status)) return;
-
-  await queue.add("generate", { imageJobId }, { jobId: imageJobId, attempts: 1 });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.imageJob.updateMany({
-      where: { id: imageJobId, status: "PENDING_ENQUEUE" },
-      data: { status: "QUEUED", queueJobId: imageJobId, queuedAt: new Date() }
-    });
-    await tx.queueOutbox.deleteMany({ where: { imageJobId } });
-  });
-}
-```
-
-### 9.2 Outbox Dispatcher
-
-Worker 进程启动时同时启动一个轻量 dispatcher：
+前端仍然需要实时计时：
 
 ```text
-每 OUTBOX_DISPATCH_INTERVAL_SECONDS 扫描 QueueOutbox。
-只取 status=PENDING 且 nextRunAt<=now 的记录。
-每次最多取 20 条。
-调用 enqueuePendingJob。
-失败则 attempts+1，nextRunAt 指数退避。
-超过 10 次仍失败，标记 QueueOutbox.FAILED，并把 ImageJob 标记 FAILED/QUEUE_ENQUEUE_FAILED。
+PENDING_ENQUEUE / QUEUED：显示“排队中 00:23”。
+RUNNING：显示“生成中 01:12”。
+COMPLETED：显示“生成耗时 01:48，总耗时 02:11”。
+FAILED：显示“失败前耗时 00:36”。
+```
+
+### 6.4 UI 展示方式
+
+生成工作台右侧状态卡：
+
+```text
+任务状态 Badge
+队列阶段 Timeline
+实时计时数字
+预计说明：图片生成通常需要几十秒到数分钟
+完成后显示下载按钮
+失败后显示原因和“重新生成”按钮
+```
+
+任务详情抽屉：
+
+```text
+创建时间
+入队时间
+开始生成时间
+完成时间
+排队耗时
+生成耗时
+总耗时
+尝试次数
+上游 request id，仅管理员可见
+```
+
+图库卡片：
+
+```text
+图片缩略图
+状态
+尺寸 / 质量
+生成耗时
+创建时间
+下载 / 复制 prompt / 重新生成
+```
+
+### 6.5 计时组件
+
+新增组件：
+
+```text
+components/job/JobTimer.tsx
+components/job/JobTimeline.tsx
+components/job/JobStatusBadge.tsx
+```
+
+`JobTimer` 规则：
+
+```text
+使用 requestAnimationFrame 或 setInterval(1000) 即可。
+页面不可见时暂停或降频。
+终态任务不启动定时器。
+时间格式为 mm:ss，超过 1 小时显示 hh:mm:ss。
 ```
 
 ---
 
-## 10. Worker 设计
+## 7. 生成工作台布局
 
-### 10.1 Worker 主流程
-
-伪代码：
-
-```ts
-async function processImageJob({ imageJobId }: ImageGenerationPayload) {
-  const workerId = `${hostname()}-${process.pid}-${randomUUID()}`;
-
-  const job = await claimJob(imageJobId, workerId);
-  if (!job) return;
-
-  try {
-    const response = await fetch(`${SUB2API_BASE_URL}/v1/images/generations`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${SUB2API_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: job.model,
-        prompt: job.prompt,
-        size: job.size,
-        quality: job.quality,
-        output_format: job.outputFormat
-      }),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_SECONDS * 1000)
-    });
-
-    const text = await response.text();
-    const upstreamRequestId = response.headers.get("x-request-id");
-
-    if (!response.ok) {
-      throw classifyUpstreamError(response.status, text, upstreamRequestId);
-    }
-
-    const json = JSON.parse(text);
-    const b64 = json?.data?.[0]?.b64_json;
-    if (!b64) throw new GenerationError("INVALID_UPSTREAM_RESPONSE", "Missing data[0].b64_json");
-
-    const buffer = Buffer.from(b64, "base64");
-    assertPng(buffer);
-
-    const filePath = await saveImageFile(job.id, buffer, job.outputFormat);
-
-    await prisma.imageJob.updateMany({
-      where: { id: job.id, workerId, status: "RUNNING" },
-      data: {
-        status: "COMPLETED",
-        resultPath: filePath,
-        resultMime: "image/png",
-        resultBytes: buffer.length,
-        upstreamRequestId,
-        completedAt: new Date(),
-        lockExpiresAt: null
-      }
-    });
-
-    await logUsage(job.userId, job.id, "GENERATE", "COMPLETED");
-  } catch (err) {
-    await handleJobFailure(job, workerId, err);
-  }
-}
-```
-
-### 10.2 错误分类
-
-可重试错误：
+### 7.1 桌面端布局
 
 ```text
-SUB2API_UNAVAILABLE
-UPSTREAM_TIMEOUT
-UPSTREAM_429
-UPSTREAM_5XX
-NETWORK_ERROR
+┌──────────────────────────────────────────────────────────┐
+│ Topbar：额度 / 队列 / 主题 / 用户                         │
+├───────────────┬──────────────────────────────┬───────────┤
+│ 左侧模板区     │ 中间创作区                    │ 右侧状态区 │
+│ 风格预设       │ Prompt textarea              │ 当前任务    │
+│ 示例 prompt    │ 图片预览 / 空状态 / 生成中      │ 计时器      │
+│ 最近使用       │ 提交按钮                      │ 参数摘要    │
+└───────────────┴──────────────────────────────┴───────────┘
 ```
 
-不可重试错误：
+### 7.2 移动端布局
 
 ```text
-INVALID_PROMPT
-INVALID_REQUEST
-CONTENT_POLICY
-UNSUPPORTED_SIZE
-AUTH_FAILED
-INVALID_UPSTREAM_RESPONSE
+顶部保留 Logo、主题切换、用户菜单。
+主区域先显示 Prompt 和提交按钮。
+参数设置使用 Sheet 从底部弹出。
+模板和历史任务使用 Tabs。
+生成状态卡固定在提交按钮下方。
 ```
 
-处理规则：
+### 7.3 Prompt 区
+
+功能：
 
 ```text
-可重试且 attempts < MAX_JOB_ATTEMPTS：
-  status 改回 QUEUED。
-  通过 BullMQ delay 重新入队。
-
-可重试但 attempts >= MAX_JOB_ATTEMPTS：
-  status=FAILED。
-  errorCode 记录具体原因。
-  如果是 SUB2API_UNAVAILABLE/UPSTREAM_5XX/UPSTREAM_TIMEOUT，可退还额度。
-
-不可重试：
-  status=FAILED。
-  不退还额度，避免恶意刷失败请求。
+多行输入。
+字符计数。
+最大长度提示。
+一键清空。
+复制上次 prompt。
+提交前显示内容规则。
 ```
 
-### 10.3 Reconciler
-
-Worker 进程启动时启动 reconciler：
+后续增强：
 
 ```text
-每 RECONCILE_INTERVAL_SECONDS 扫描：
-PENDING_ENQUEUE 但没有 outbox 的任务：补 QueueOutbox。
-QUEUED 但 BullMQ 不存在对应 job 的任务：重新入队。
-RUNNING 且 lockExpiresAt < now 的任务：按 attempts 决定重新 QUEUED 或 FAILED。
-COMPLETED 但 resultPath 文件不存在：标记 IMAGE_FILE_MISSING。
+Prompt 模板。
+风格预设。
+构图预设。
+用途预设：海报、头像、产品图、信息图、壁纸。
 ```
 
-这一步是生产稳定性的关键，不应省略。
+### 7.4 参数区
 
----
-
-## 11. 图片存储
-
-保存路径：
+字段：
 
 ```text
-/app/storage/generated/YYYY-MM-DD/{imageJobId}.png
+尺寸：1024x1024、1536x1024、1024x1536
+质量：low、medium、high
+格式：MVP 固定 png，不暴露给普通用户
+模型：MVP 固定 gpt-image-2，不暴露给普通用户
 ```
 
-保存要求：
+展示方式：
 
 ```text
-按日期创建目录。
-文件名只使用 imageJobId。
-禁止使用用户 prompt 作为文件名。
-写入前确保目录存在。
-写入使用临时文件再 rename，避免半文件。
-数据库保存绝对路径或相对 storage key 均可，但 API 不返回该路径。
-读取文件时必须确认路径在 IMAGE_STORAGE_DIR 下。
-```
-
-保存伪代码：
-
-```ts
-async function saveImageFile(jobId: string, buffer: Buffer, format: "png") {
-  const date = new Date().toISOString().slice(0, 10);
-  const dir = path.join(IMAGE_STORAGE_DIR, date);
-  await fs.mkdir(dir, { recursive: true });
-
-  const finalPath = path.join(dir, `${jobId}.${format}`);
-  const tmpPath = `${finalPath}.${process.pid}.tmp`;
-
-  await fs.writeFile(tmpPath, buffer, { flag: "wx" });
-  await fs.rename(tmpPath, finalPath);
-  return finalPath;
-}
-```
-
-PNG 校验：
-
-```text
-检查文件头是否为 PNG magic bytes。
-限制最大文件大小，例如 50MB。
+使用 segmented control 或 card radio，不再使用原生 select。
+每个选项附带说明，例如“方图 / 横图 / 竖图”。
+质量说明成本和速度影响。
 ```
 
 ---
 
-## 12. 限额和计费规则
+## 8. 图库页
 
-默认：
+### 8.1 路由
 
 ```text
-普通用户每日 3 张。
-管理员不受每日额度限制，但仍受系统并发保护。
-每个普通用户同时最多 1 个 active job。
-全站最多 50 个等待任务。
-Worker 默认并发 2，稳定后再调到 3。
+/gallery
 ```
 
-active job：
+### 8.2 功能
 
 ```text
-PENDING_ENQUEUE
-QUEUED
-RUNNING
+展示当前用户所有任务。
+默认只突出 COMPLETED 图片。
+可筛选：全部、生成中、完成、失败、已过期。
+可按创建时间排序。
+点击图片打开 Job Detail Drawer。
+支持下载。
+支持复制 prompt。
+支持重新生成。
+失败任务显示失败原因。
 ```
 
-每日额度统计：
+### 8.3 卡片内容
 
 ```text
-quotaDate = 站点业务时区 YYYY-MM-DD。
-计入额度的任务：quotaCharged=true 且 quotaRefundedAt=null。
-创建任务时即占用额度。
-任务取消是否退还：MVP 不退。
-用户 prompt 或参数错误导致失败：不退。
-Sub2API 不可用、上游 5xx、网络超时：可退。
+缩略图或状态占位。
+Prompt 前 80 字。
+尺寸和质量。
+状态 Badge。
+生成耗时。
+创建时间。
+快捷操作按钮。
 ```
 
-退还额度只需要更新任务：
+### 8.4 空状态
 
 ```text
-quotaRefundedAt = now()
-errorCode = SUB2API_UNAVAILABLE / UPSTREAM_TIMEOUT / UPSTREAM_5XX
-```
-
-因为额度通过 ImageJob 统计，不需要额外维护计数器，避免计数漂移。
-
----
-
-## 13. 前端页面
-
-### 13.1 `/login`
-
-```text
-邮箱
-密码
-Turnstile
-登录按钮
-注册链接
-```
-
-### 13.2 `/register`
-
-```text
-邮箱
-密码
-邀请码
-Turnstile
-注册按钮
-```
-
-### 13.3 `/dashboard`
-
-```text
-今日剩余额度
-当前 active job
-最近任务列表
-生成图片入口
-失败任务提示
-```
-
-### 13.4 `/generate`
-
-```text
-Prompt 输入框
-尺寸选择：1024x1024、1536x1024、1024x1536
-质量选择：low、medium、high
-内容规则提示
-提交按钮
-```
-
-提交成功后跳转：
-
-```text
-/jobs/:id
-```
-
-### 13.5 `/jobs/:id`
-
-```text
-任务状态
-prompt
-尺寸和质量
-排队中 / 生成中 UI
-失败原因
-完成后的图片预览
-下载按钮
-```
-
-轮询策略：
-
-```text
-PENDING_ENQUEUE / QUEUED / RUNNING：每 3 秒轮询。
-页面不可见时暂停或降频到 15 秒。
-COMPLETED / FAILED / CANCELED / EXPIRED：停止轮询。
-连续 5 次网络错误后降频并提示刷新。
-```
-
-### 13.6 `/admin`
-
-```text
-用户列表
-禁用 / 启用用户
-修改每日额度
-任务列表
-失败任务详情
-生成邀请码
-删除任务和图片文件
-基础统计：今日任务数、失败数、队列长度
+没有图片时显示高质量空状态插画区域。
+提供“开始生成第一张图片”按钮。
+给出 3 个可点击 prompt 示例。
 ```
 
 ---
 
-## 14. 安全和滥用控制
+## 9. 任务状态和轮询
 
-第一版必须有：
+### 9.1 使用 TanStack Query
+
+替换当前手写 `useEffect + setInterval` 轮询。
+
+任务详情查询：
 
 ```text
-邀请码注册。
-注册、登录、创建任务限流。
-HttpOnly Secure session cookie。
-CSRF 防护。
-prompt 长度限制。
-用户每日额度。
-用户 active job 限制。
-全站队列上限。
-记录 prompt。
-记录 IP hash 和 user agent。
-管理员禁用用户。
-日志脱敏。
+终态：COMPLETED / FAILED / CANCELED / EXPIRED，停止轮询。
+非终态：每 2 到 3 秒轮询。
+页面不可见时暂停或降频。
+网络错误时退避。
 ```
 
-生产建议第一版就接：
+### 9.2 状态映射
+
+用户可读状态：
 
 ```text
-Cloudflare Turnstile。
-Cloudflare WAF 基础规则。
-Nginx 请求体大小限制。
-Nginx / Cloudflare 真实 IP 配置。
+PENDING_ENQUEUE -> 正在入队
+QUEUED          -> 排队中
+RUNNING         -> 正在生成
+COMPLETED       -> 已完成
+FAILED          -> 生成失败
+CANCELED        -> 已取消
+EXPIRED         -> 图片已过期
 ```
 
-用户提交前显示规则：
+### 9.3 错误提示
+
+不要只显示后端原始错误。前端需要映射：
 
 ```text
-请勿生成违法、色情、仇恨、暴力、侵犯他人隐私、侵犯版权或冒充他人的内容。违规账号会被禁用。
+NETWORK_ERROR / fetch failed：
+  图片服务暂时无法连接，请稍后重试。
+
+UPSTREAM_TIMEOUT：
+  图片生成超时，额度已退还。
+
+UPSTREAM_429：
+  上游繁忙或限速，请稍后再试。
+
+AUTH_FAILED：
+  图片服务密钥无效，请联系管理员。
+
+CONTENT_POLICY：
+  Prompt 可能违反内容规则，请修改后重试。
 ```
 
----
-
-## 15. 日志和审计
-
-必须记录：
+管理员详情中可以显示：
 
 ```text
-用户注册
-登录成功
-登录失败
-创建图片任务
-入队成功 / 入队失败
-任务开始执行
-Sub2API 请求失败
-任务生成成功
-任务生成失败
-图片预览
-图片下载
-管理员修改用户
-管理员禁用用户
-管理员删除任务
-```
-
-禁止记录：
-
-```text
-用户明文密码
-SUB2API_API_KEY
-完整 session token
-完整 Turnstile secret
-完整上游错误体中的敏感字段
-```
-
-建议：
-
-```text
-日志使用结构化 JSON。
-每个请求生成 requestId。
-Worker 日志包含 imageJobId 和 upstreamRequestId。
+errorCode
+upstreamStatus
+upstreamRequestId
+原始错误摘要
 ```
 
 ---
 
-## 16. Docker 部署
+## 10. 后台管理 UI
 
-目录结构：
+### 10.1 总览
 
 ```text
-image-site/
+今日创建任务数。
+今日成功任务数。
+今日失败任务数。
+平均生成耗时。
+当前 QUEUED 数。
+当前 RUNNING 数。
+活跃 Worker 数。
+Bull Board 入口。
+```
+
+### 10.2 用户管理
+
+```text
+搜索 email。
+显示 role、dailyQuota、isDisabled、任务数、注册时间。
+快速加减额度。
+禁用 / 启用。
+后续增加改密和重置 session。
+```
+
+### 10.3 任务管理
+
+```text
+按状态筛选。
+按用户筛选。
+显示耗时。
+显示失败原因。
+支持删除任务和图片。
+支持复制 job id。
+```
+
+---
+
+## 11. API 调整清单
+
+### 11.1 `PublicJob`
+
+增加：
+
+```text
+queueDurationMs
+generationDurationMs
+totalDurationMs
+statusLabel
+```
+
+保留：
+
+```text
+createdAt
+queuedAt
+startedAt
+completedAt
+imageUrl
+downloadUrl
+```
+
+### 11.2 新增 `GET /api/admin/stats`
+
+当前已有基础统计，v0.3 增强：
+
+```text
+averageGenerationDurationMs
+averageQueueDurationMs
+activeWorkers
+queuedJobs
+runningJobs
+failedToday
+completedToday
+```
+
+### 11.3 新增 `POST /api/image-jobs/:id/rerun`
+
+用于图库和失败任务重新生成：
+
+```text
+必须登录。
+普通用户只能 rerun 自己的任务。
+读取旧任务 prompt、size、quality。
+重新走创建任务事务和额度检查。
+返回新 job。
+```
+
+如果不想增加 API，也可以前端复制旧参数后跳转 `/generate` 并预填。
+
+---
+
+## 12. 文件结构建议
+
+```text
+app/
+  (auth)/
+    login/
+    register/
+  (app)/
+    layout.tsx
+    generate/
+    gallery/
+    jobs/
+    admin/
+
+components/
   app/
-  components/
-  lib/
-  prisma/
-  worker/
-  scripts/
-  storage/
-  docker-compose.yml
-  Dockerfile
-  .env
-  .env.example
-  README.md
-```
+    AppSidebar.tsx
+    Topbar.tsx
+    ThemeToggle.tsx
+    UserMenu.tsx
+    QuotaPill.tsx
+  generate/
+    PromptEditor.tsx
+    ParameterPanel.tsx
+    TemplateRail.tsx
+    GenerationWorkspace.tsx
+  gallery/
+    GalleryGrid.tsx
+    GalleryCard.tsx
+    GalleryFilters.tsx
+  job/
+    JobTimer.tsx
+    JobTimeline.tsx
+    JobStatusBadge.tsx
+    JobDetailDrawer.tsx
+  admin/
+    AdminStats.tsx
+    UserTable.tsx
+    JobTable.tsx
+    InviteCodePanel.tsx
+  theme/
+    ThemeProvider.tsx
+    ThemeToggle.tsx
+  ui/
+    shadcn components
 
-### 16.1 docker-compose.yml
-
-```yaml
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: image-site-postgres
-    environment:
-      POSTGRES_USER: image_app
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: image_app
-    volumes:
-      - image_site_postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U image_app -d image_app"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    networks:
-      - image-site
-
-  redis:
-    image: redis:7-alpine
-    container_name: image-site-redis
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - image_site_redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    networks:
-      - image-site
-
-  migrate:
-    build: .
-    container_name: image-site-migrate
-    command: sh -c "npx prisma migrate deploy && npm run seed"
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - image-site
-
-  app:
-    build: .
-    container_name: image-site-app
-    command: npm run start
-    env_file:
-      - .env
-    ports:
-      - "3005:3000"
-    volumes:
-      - ./storage:/app/storage
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - image-site
-      - sub2api-network
-
-  worker:
-    build: .
-    container_name: image-site-worker
-    command: npm run worker
-    env_file:
-      - .env
-    volumes:
-      - ./storage:/app/storage
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    networks:
-      - image-site
-      - sub2api-network
-
-volumes:
-  image_site_postgres:
-  image_site_redis:
-
-networks:
-  image-site:
-  sub2api-network:
-    external: true
-    name: sub2api-deploy_sub2api-network
-```
-
-`.env` 中：
-
-```env
-SUB2API_BASE_URL=http://sub2api:8080
-```
-
-如果 Sub2API 不在同一个 Docker network：
-
-```text
-Linux 宿主机可使用 host-gateway。
-或让 Worker 直接访问宿主机内网 IP。
-不要让 Worker 走 Cloudflare 公网域名。
-```
-
-### 16.2 npm scripts
-
-```json
-{
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "worker": "tsx worker/image-worker.ts",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate deploy",
-    "prisma:dev": "prisma migrate dev",
-    "seed": "tsx prisma/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts",
-    "reconcile": "tsx scripts/reconcile.ts",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
-  }
-}
+lib/
+  duration.ts
+  status-labels.ts
+  query-client.ts
 ```
 
 ---
 
-## 17. Nginx
+## 13. 开发顺序
 
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name image.example.com;
-
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name image.example.com;
-
-    ssl_certificate /etc/letsencrypt/live/image.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/image.example.com/privkey.pem;
-
-    client_max_body_size 2m;
-
-    location / {
-        proxy_pass http://127.0.0.1:3005;
-        proxy_http_version 1.1;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_read_timeout 60;
-        proxy_send_timeout 60;
-    }
-}
-```
-
-说明：
+### 阶段 1：组件和主题基础
 
 ```text
-用户请求不会等待图片生成完成，因此可走 Cloudflare 橙云。
-Worker 调用 Sub2API 必须走服务器内网，不走 Cloudflare。
-不要配置 /storage 或 /generated 静态公开目录。
+安装 shadcn/ui 基础配置。
+安装 next-themes、lucide-react、sonner。
+创建 ThemeProvider。
+实现 Day / Night 主题 token。
+实现 ThemeToggle。
+重构 globals.css，移除大部分页面 inline style。
 ```
 
-如果后续使用 `X-Accel-Redirect`：
-
-```nginx
-location /internal-generated/ {
-    internal;
-    alias /path/to/image-site/storage/generated/;
-}
-```
-
-只有鉴权 API 可以返回 `X-Accel-Redirect`，外部不能直接访问该路径。
-
----
-
-## 18. 清理任务
-
-`npm run cleanup` 必须做：
+验收：
 
 ```text
-删除过期 session。
-扫描超过 IMAGE_RETENTION_DAYS 的 COMPLETED 图片文件。
-删除文件后设置 resultDeletedAt=now。
-将任务状态改为 EXPIRED，或保留 COMPLETED 但 image/download 返回 IMAGE_EXPIRED。
-清理过旧的 BullMQ completed/failed 记录。
+登录页、注册页、dashboard 在 day/night 下都可读。
+刷新后主题保持。
+无明显 hydration warning。
 ```
 
-建议：
+### 阶段 2：App Shell
 
 ```text
-先实现手动脚本。
-部署稳定后用 cron 每天凌晨执行。
-清理前输出 dry-run 统计。
+新增 AppLayout。
+实现 Sidebar、Topbar、UserMenu、QuotaPill。
+普通用户和管理员菜单区分。
+移动端 Sidebar 改 Sheet。
 ```
 
----
-
-## 19. 初始化管理员
-
-`prisma/seed.ts`：
+验收：
 
 ```text
-读取 ADMIN_EMAIL 和 ADMIN_PASSWORD。
-如果 ADMIN_EMAIL 不存在，创建 ADMIN。
-如果已存在，不覆盖密码。
-检查当前未使用、未过期的邀请码数量。
-如果少于 5 个，则补足到 5 个。
-seed 日志不得输出明文密码。
+桌面端导航清晰。
+移动端不横向溢出。
+管理员入口只对 ADMIN 显示。
 ```
 
-上线要求：
+### 阶段 3：生成工作台
 
 ```text
-首次登录后立即修改管理员密码，或实现管理员改密接口。
-生产环境不要长期保留弱 ADMIN_PASSWORD。
+重构 /generate。
+PromptEditor。
+ParameterPanel。
+TemplateRail。
+提交后在当前页面展示任务状态，不强制跳转。
+保留跳转到 /jobs/:id 的能力。
 ```
 
----
-
-## 20. 健康检查
-
-### 20.1 `/api/health`
-
-返回：
-
-```json
-{
-  "ok": true,
-  "version": "0.2.0",
-  "database": "ok",
-  "redis": "ok"
-}
-```
-
-要求：
+验收：
 
 ```text
-不返回环境变量。
-不返回 Sub2API key。
-可以不检查 Sub2API，避免健康检查触发上游压力。
+创建任务后 1 秒内看到任务卡片。
+排队中显示实时等待时间。
+生成中显示实时生成时间。
+完成后直接看到图片和下载按钮。
 ```
 
-### 20.2 Worker heartbeat
-
-Worker 每 30 秒写 Redis：
+### 阶段 4：计时和任务详情
 
 ```text
-image-site:worker:{workerId}:heartbeat = timestamp
-TTL = 90 秒
+增加 duration 工具。
+publicJob 增加耗时字段。
+新增 JobTimer、JobTimeline、JobDetailDrawer。
+任务列表和详情展示耗时。
 ```
 
-管理员统计页可以显示活跃 Worker 数。
-
----
-
-## 21. 测试计划
-
-### 21.1 单元测试
+验收：
 
 ```text
-email/password 校验。
-CSRF 校验。
-尺寸和质量白名单。
-safe path 校验。
-错误分类。
-quotaDate 时区计算。
+RUNNING 时秒表递增。
+COMPLETED 后秒表停止。
+刷新页面后仍能根据 startedAt/completedAt 显示正确耗时。
+FAILED 任务显示失败前耗时。
 ```
 
-### 21.2 集成测试
+### 阶段 5：图库
 
 ```text
-邀请码注册成功。
-邀请码重复使用失败。
-登录成功和失败。
-禁用用户无法登录。
-未登录不能创建任务。
-超每日额度失败。
-单用户 active job 限制生效。
-全站队列满失败。
-DB 创建成功但 Redis 入队失败后，outbox 能恢复。
-Worker 成功生成并保存图片。
-Worker 收到上游 5xx 后可重试并退还额度。
-Worker 崩溃模拟后，reconciler 能恢复 RUNNING 任务。
-普通用户不能访问他人图片。
-管理员可以访问任意图片。
-过期图片返回 IMAGE_EXPIRED。
+新增 /gallery。
+实现 GalleryGrid。
+实现状态筛选。
+实现下载、复制 prompt、重新生成。
 ```
 
-### 21.3 手工验收
+验收：
 
 ```text
-curl 从 worker 容器内能访问 http://sub2api:8080/v1/images/generations。
-提交任务后页面立即拿到 job id。
-任务不会让 HTTP 请求等待图片完成。
-任务完成后可预览。
-下载文件是有效 PNG。
-Cloudflare 橙云打开时仍可完成任务。
-重启 worker 后未完成任务能恢复。
+完成图片以网格展示。
+失败任务不会破坏布局。
+点击卡片打开详情。
+移动端两列或单列自适应。
+```
+
+### 阶段 6：后台 UI 优化
+
+```text
+AdminStats。
+UserTable。
+JobTable。
+InviteCodePanel。
+Bull Board 入口保留。
+失败原因和耗时进入任务表。
 ```
 
 ---
 
-## 22. 开发顺序
+## 14. 验收标准
 
-### 阶段 1：项目骨架
-
-```text
-初始化 Next.js + TypeScript。
-安装 Prisma、BullMQ、Redis client、argon2、Tailwind、tsx、测试工具。
-配置 ESLint/TypeScript。
-编写 Dockerfile 和 compose 基础版本。
-```
-
-### 阶段 2：数据库和认证
+v0.3 完成标准：
 
 ```text
-编写 Prisma schema。
-创建 migration。
-实现 seed 管理员和邀请码。
-实现 session、CSRF、auth API。
-实现基础限流。
-```
-
-### 阶段 3：任务创建和 Outbox
-
-```text
-实现 ImageJob API。
-实现创建任务事务和 advisory lock。
-实现额度检查。
-实现 active job 检查。
-实现 QueueOutbox。
-实现 enqueuePendingJob 和 dispatcher。
-```
-
-### 阶段 4：Worker 和存储
-
-```text
-实现 Worker。
-实现 claimJob 条件更新。
-实现 Sub2API 调用。
-实现图片保存。
-实现错误分类和重试。
-实现 reconciler。
-实现 cleanup。
-```
-
-### 阶段 5：前端页面
-
-```text
-登录页。
-注册页。
-dashboard。
-generate。
-job detail。
-admin。
-```
-
-### 阶段 6：部署和验证
-
-```text
-完善 docker-compose healthcheck 和 migrate service。
-完善 Nginx 配置。
-编写 README 部署说明。
-写集成测试。
-在服务器上用真实 Sub2API 生成一张图。
-模拟 worker 重启和入队失败。
+站点有明确的工作台布局，不再是几个简单表单页面。
+白天和黑夜主题都可用，并能手动切换。
+生成任务时能看到实时计时。
+生成完成后能看到生成耗时和总耗时。
+图库页可以查看历史图片。
+失败任务有可理解的错误提示。
+移动端可以完整使用生成、查看、下载流程。
+Sub2API key 不出现在前端。
+图片仍然通过鉴权 API 访问。
+Better Auth、Turnstile、Bull Board 保持可用。
 ```
 
 ---
 
-## 23. 第一版默认配置
+## 15. 测试计划
+
+### 15.1 UI 手工测试
 
 ```text
-默认模型：gpt-image-2
-默认尺寸：1024x1024
-默认质量：high
-默认格式：png
-普通用户每日额度：3
-普通用户 active job：1
-全站等待任务上限：50
-Worker 并发：2
-最大尝试次数：2
-上游超时：900 秒
-图片保留时间：3 天
-注册方式：邀请码 + Turnstile
+Day theme 下登录、注册、生成、图库、后台可读。
+Night theme 下登录、注册、生成、图库、后台可读。
+刷新页面后主题保持。
+移动端打开侧边导航正常。
+Prompt 超长时显示错误。
+提交任务后计时开始。
+任务完成后计时停止。
+下载按钮可用。
+失败任务显示可读错误。
+```
+
+### 15.2 API 测试
+
+```text
+GET /api/image-jobs 返回 duration 字段。
+GET /api/image-jobs/:id 返回 duration 字段。
+RUNNING 任务 duration 字段允许为 null，前端实时计算。
+COMPLETED 任务 generationDurationMs 不为空。
+普通用户不能访问他人任务。
+管理员可以访问任意任务。
+```
+
+### 15.3 Docker 验收
+
+```text
+docker compose up -d --build 正常。
+app healthcheck 正常。
+worker 能访问 SUB2API_BASE_URL。
+Bull Board 仍需 Basic Auth。
 ```
 
 ---
 
-## 24. 验收标准
-
-必须全部满足：
+## 16. 参考资料
 
 ```text
-Sub2API key 不出现在前端 bundle、HTML、API 响应和日志中。
-未登录用户不能创建任务、查看任务、预览图片、下载图片。
-普通用户不能访问其他用户任务和图片。
-管理员可以查看用户和任务。
-任务创建接口在并发请求下不会突破每日额度。
-任务创建接口在并发请求下不会突破单用户 active job 限制。
-DB 任务创建后即使 Redis 入队失败，也能通过 outbox 恢复。
-Worker 崩溃后 RUNNING 任务能通过 reconciler 恢复或失败收敛。
-图片文件不通过静态目录公开。
-Cloudflare 代理下不会因图片生成长耗时导致用户请求超时。
-Docker 首次部署会自动执行 migration 和 seed。
-PostgreSQL、Redis、App 有健康检查。
-cleanup 能删除过期图片和 session。
-```
+shadcn/ui Next.js dark mode：
+https://ui.shadcn.com/docs/dark-mode/next
 
----
+shadcn/ui theming：
+https://ui.shadcn.com/docs/theming
 
-## 25. 参考资料
+TanStack Query polling：
+https://tanstack.com/query/v5/docs/framework/react/guides/query-options
 
-```text
-OpenAI gpt-image-2 模型页：
-https://developers.openai.com/api/docs/models/gpt-image-2
+React Hook Form：
+https://react-hook-form.com/get-started
 
-OpenAI Image generation guide：
-https://developers.openai.com/api/docs/guides/image-generation
-
-OpenAI Images API reference：
-https://developers.openai.com/api/reference/resources/images
-
-BullMQ Worker concurrency：
-https://docs.bullmq.io/guide/workers/concurrency
-
-Next.js Route Handlers：
-https://nextjs.org/docs/app/getting-started/route-handlers
+Zod resolvers：
+https://github.com/react-hook-form/resolvers
 ```
