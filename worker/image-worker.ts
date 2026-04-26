@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { ImageGenerationPayload, enqueuePendingJob, ensureQueued } from "@/lib/queue";
-import { parseStoredInputImages, readImageFile, saveImageFile } from "@/lib/storage";
+import { parseStoredInputImages, readImageFile, saveImageFile, saveThumbnailFile } from "@/lib/storage";
 import { GenerationError, classifyUpstreamError } from "@/lib/upstream-errors";
 
 const workerId = `${os.hostname()}-${process.pid}-${randomUUID()}`;
@@ -154,6 +154,10 @@ async function processImageJob(payload: ImageGenerationPayload) {
 
     const buffer = Buffer.from(b64, "base64");
     const filePath = await saveImageFile(job.id, buffer, job.outputFormat);
+    const thumbnail = await saveThumbnailFile(job.id, buffer).catch((error) => {
+      console.warn("Failed to create thumbnail for job", job.id, error);
+      return null;
+    });
     const completedAt = new Date();
 
     await prisma.imageJob.updateMany({
@@ -163,6 +167,9 @@ async function processImageJob(payload: ImageGenerationPayload) {
         resultPath: filePath,
         resultMime: "image/png",
         resultBytes: buffer.length,
+        thumbnailPath: thumbnail?.path,
+        thumbnailMime: thumbnail?.mime,
+        thumbnailBytes: thumbnail?.bytes,
         upstreamRequestId,
         completedAt,
         workerId: null,

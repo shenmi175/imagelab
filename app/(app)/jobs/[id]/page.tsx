@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, RotateCcw } from "lucide-react";
@@ -14,6 +14,7 @@ import { terminalStatuses } from "@/lib/status-labels";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const jobQuery = useQuery({
@@ -32,7 +33,7 @@ export default function JobDetailPage() {
     onSuccess: (job) => {
       toast.success("已重新提交任务");
       queryClient.setQueryData(["job", job.id], job);
-      window.location.href = `/jobs/${job.id}`;
+      router.replace(`/jobs/${job.id}`);
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "重新生成失败")
   });
@@ -79,7 +80,7 @@ export default function JobDetailPage() {
 
           <div className="card result-panel">
             {job.imageUrl ? (
-              <img className="preview" src={job.imageUrl} alt={job.prompt} />
+              <img className="preview" src={job.imageUrl} alt={job.prompt} decoding="async" />
             ) : (
               <div className="empty-preview tall">
                 <RotateCcw className="h-5 w-5" />

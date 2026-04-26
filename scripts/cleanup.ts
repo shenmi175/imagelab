@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { JobStatus } from "@prisma/client";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { assertSafeStoragePath } from "@/lib/storage";
+import { assertSafeStoragePath, deleteInputImages } from "@/lib/storage";
 
 async function removeFile(filePath: string | null) {
   if (!filePath) return;
@@ -29,6 +29,8 @@ async function main() {
 
   for (const job of expiredJobs) {
     await removeFile(job.resultPath);
+    await removeFile(job.thumbnailPath);
+    await deleteInputImages(job.inputImages);
     await prisma.imageJob.update({
       where: { id: job.id },
       data: { status: JobStatus.EXPIRED, resultDeletedAt: new Date() }

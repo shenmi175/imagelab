@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AppShell } from "@/components/app/AppShell";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
@@ -16,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           <QueryProvider>
-            <AppShell>{children}</AppShell>
+            {children}
             <Toaster richColors position="top-right" />
           </QueryProvider>
         </ThemeProvider>

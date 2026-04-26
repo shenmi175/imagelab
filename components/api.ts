@@ -43,6 +43,7 @@ export type PublicJob = {
   errorMessage?: string | null;
   displayError?: string | null;
   imageUrl?: string | null;
+  thumbnailUrl?: string | null;
   downloadUrl?: string | null;
 };
 

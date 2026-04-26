@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import AdminClient from "@/app/admin/AdminClient";
+import AdminClient from "./AdminClient";
 import { requireAdmin } from "@/lib/auth";
 import { ApiError } from "@/lib/http";
 
@@ -10,10 +9,6 @@ export default async function AdminPage() {
   try {
     await requireAdmin();
   } catch (error) {
-    if (error instanceof ApiError && error.code === "UNAUTHORIZED") {
-      redirect("/login");
-    }
-
     return (
       <main className="card auth-required">
         <p className="muted">Admin only</p>

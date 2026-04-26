@@ -16,6 +16,7 @@ export async function DELETE(request: Request, context: any) {
     if (!job) return jsonOk({ ok: true });
 
     await deleteImageFile(job.resultPath);
+    await deleteImageFile(job.thumbnailPath);
     await deleteInputImages(job.inputImages);
     await prisma.imageJob.delete({ where: { id } });
     await prisma.usageLog.create({

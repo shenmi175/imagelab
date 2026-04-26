@@ -46,6 +46,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
     const scope = url.searchParams.get("scope");
+    const cursor = url.searchParams.get("cursor");
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 24, 1), 50);
     const statusFilter = status && visibleStatuses.has(status) ? { status: status as JobStatus } : {};
     const ownerFilter = user.role === UserRole.ADMIN && scope === "all" ? {} : { userId: user.id };
 
@@ -55,10 +57,14 @@ export async function GET(request: Request) {
         ...statusFilter
       },
       orderBy: { createdAt: "desc" },
-      take: 100
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: limit + 1
     });
 
-    return jsonOk({ items: items.map(publicJob) });
+    const visibleItems = items.slice(0, limit);
+    const nextCursor = items.length > limit ? items[limit].id : null;
+
+    return jsonOk({ items: visibleItems.map(publicJob), nextCursor });
   } catch (error) {
     return jsonError(error);
   }

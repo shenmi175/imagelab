@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { env } from "@/lib/env";
 import { ApiError } from "@/lib/http";
 
@@ -72,6 +73,30 @@ export async function saveImageFile(jobId: string, buffer: Buffer, format = "png
   await fs.writeFile(tmpPath, buffer, { flag: "wx" });
   await fs.rename(tmpPath, finalPath);
   return finalPath;
+}
+
+export async function saveThumbnailFile(jobId: string, buffer: Buffer) {
+  assertPng(buffer);
+  const date = new Date().toISOString().slice(0, 10);
+  const dir = path.join(env.imageStorageDir, date, "thumbs");
+  await fs.mkdir(dir, { recursive: true });
+
+  const thumbnail = await sharp(buffer)
+    .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
+
+  assertPng(thumbnail);
+
+  const finalPath = path.join(dir, `${jobId}.png`);
+  const tmpPath = `${finalPath}.${process.pid}.tmp`;
+  await fs.writeFile(tmpPath, thumbnail, { flag: "wx" });
+  await fs.rename(tmpPath, finalPath);
+  return {
+    path: finalPath,
+    mime: "image/png",
+    bytes: thumbnail.length
+  };
 }
 
 export async function saveInputImageFile(input: {

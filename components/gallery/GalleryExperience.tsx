@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Download, RefreshCw, Sparkles } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
@@ -33,19 +33,27 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
   const [status, setStatus] = useState("");
   const [selectedJob, setSelectedJob] = useState<PublicJob | null>(null);
 
-  const queryUrl = useMemo(() => {
+  const queryBase = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    params.set("limit", "24");
     const suffix = params.toString();
     return `/api/image-jobs${suffix ? `?${suffix}` : ""}`;
   }, [status]);
 
-  const jobsQuery = useQuery({
+  const jobsQuery = useInfiniteQuery({
     queryKey: ["image-jobs", status],
-    queryFn: () => apiFetch<{ items: PublicJob[] }>(queryUrl),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => {
+      const separator = queryBase.includes("?") ? "&" : "?";
+      return apiFetch<{ items: PublicJob[]; nextCursor?: string | null }>(
+        `${queryBase}${pageParam ? `${separator}cursor=${pageParam}` : ""}`
+      );
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     refetchInterval: (query) => {
-      const data = query.state.data as { items: PublicJob[] } | undefined;
-      const hasActive = data?.items.some((job) => !terminalStatuses.has(job.status));
+      const data = query.state.data as { pages?: Array<{ items: PublicJob[] }> } | undefined;
+      const hasActive = data?.pages?.some((page) => page.items.some((job) => !terminalStatuses.has(job.status)));
       if (typeof document === "undefined") return false;
       return hasActive ? 3000 : false;
     }
@@ -61,7 +69,7 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
     onError: (error) => toast.error(error instanceof Error ? error.message : "重新生成失败")
   });
 
-  const jobs = jobsQuery.data?.items ?? [];
+  const jobs = jobsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const completedCount = jobs.filter((job) => job.status === "COMPLETED").length;
 
   function copyPrompt(job: PublicJob) {
@@ -112,7 +120,11 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
         <section className="gallery-grid">
           {jobs.map((job) => (
             <article className="gallery-card card" key={job.id} onClick={() => setSelectedJob(job)}>
-              {job.imageUrl ? <img src={job.imageUrl} alt={job.prompt} /> : <div className="gallery-placeholder">{job.statusLabel}</div>}
+              {job.thumbnailUrl ? (
+                <img src={job.thumbnailUrl} alt={job.prompt} loading="lazy" decoding="async" />
+              ) : (
+                <div className="gallery-placeholder">{job.statusLabel}</div>
+              )}
               <div className="gallery-card-body">
                 <div className="section-heading compact">
                   <JobStatusBadge job={job} />
@@ -158,6 +170,14 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
           </div>
         </section>
       )}
+
+      {jobsQuery.hasNextPage ? (
+        <div className="load-more-row">
+          <Button variant="secondary" onClick={() => jobsQuery.fetchNextPage()} disabled={jobsQuery.isFetchingNextPage}>
+            {jobsQuery.isFetchingNextPage ? "加载中..." : "加载更多"}
+          </Button>
+        </div>
+      ) : null}
 
       <JobDetailDrawer job={selectedJob} onClose={() => setSelectedJob(null)} onRerun={(job) => rerunMutation.mutate(job)} />
     </main>

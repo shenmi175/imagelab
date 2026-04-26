@@ -40,7 +40,7 @@ export function JobDetailDrawer({
           {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
           <JobTimeline job={job} />
 
-          {job.imageUrl ? <img className="preview" src={job.imageUrl} alt={job.prompt} /> : <div className="empty-preview">图片还在生成中</div>}
+          {job.imageUrl ? <img className="preview" src={job.imageUrl} alt={job.prompt} decoding="async" /> : <div className="empty-preview">图片还在生成中</div>}
 
           <div className="action-row">
             {job.downloadUrl ? <a className="button" href={job.downloadUrl}>下载图片</a> : null}

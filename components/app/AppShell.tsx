@@ -1,55 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Image, LayoutDashboard, Menu, Shield, Sparkles, UserRound, X } from "lucide-react";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, type MeResponse } from "@/components/api";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
 type AppShellProps = {
+  initialUser: NonNullable<MeResponse["user"]>;
+  initialRemainingQuota?: number;
   children: React.ReactNode;
 };
 
-const publicRoutes = new Set(["/", "/login", "/register"]);
-
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ initialUser, initialRemainingQuota, children }: AppShellProps) {
+  const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: () => apiFetch<MeResponse>("/api/auth/me"),
-    retry: false
+    initialData: { user: initialUser, remainingQuota: initialRemainingQuota },
+    retry: false,
+    staleTime: 5 * 60 * 1000
   });
-  const user = meQuery.data?.user ?? null;
+  const user = meQuery.data.user ?? initialUser;
   const remainingQuota = meQuery.data?.remainingQuota;
-  const isPublic = publicRoutes.has(pathname);
-
-  if (isPublic || !user) {
-    return (
-      <div className="shell public-shell">
-        <header className="public-nav">
-          <Link href={user ? "/generate" : "/login"} className="brand">
-            Image Lab
-          </Link>
-          <div className="nav-actions">
-            <ThemeToggle />
-            {user ? (
-              <Link className="button secondary" href="/generate">进入工作台</Link>
-            ) : (
-              <>
-                <Link className="nav-link" href="/login">登录</Link>
-                <Link className="button secondary" href="/register">注册</Link>
-              </>
-            )}
-          </div>
-        </header>
-        {children}
-      </div>
-    );
-  }
 
   const navItems = [
     { href: "/generate", label: "生成", icon: Sparkles },
@@ -60,7 +39,20 @@ export function AppShell({ children }: AppShellProps) {
 
   async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+    queryClient.clear();
+    router.replace("/login");
+    router.refresh();
+  }
+
+  function prefetchRoute(href: string) {
+    router.prefetch(href);
+    if (href === "/gallery" || href === "/jobs") {
+      void queryClient.prefetchInfiniteQuery({
+        queryKey: ["image-jobs", ""],
+        initialPageParam: null as string | null,
+        queryFn: () => apiFetch<{ items: unknown[]; nextCursor?: string | null }>("/api/image-jobs?limit=24")
+      });
+    }
   }
 
   const sidebar = (
@@ -76,7 +68,14 @@ export function AppShell({ children }: AppShellProps) {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
-            <Link className={active ? "sidebar-link active" : "sidebar-link"} href={item.href} key={item.href} onClick={() => setSidebarOpen(false)}>
+            <Link
+              className={active ? "sidebar-link active" : "sidebar-link"}
+              href={item.href}
+              key={item.href}
+              onClick={() => setSidebarOpen(false)}
+              onMouseEnter={() => prefetchRoute(item.href)}
+              onFocus={() => prefetchRoute(item.href)}
+            >
               <Icon className="h-4 w-4" />
               {item.label}
             </Link>

@@ -155,7 +155,7 @@ export default function GeneratePage() {
               <div className="upload-preview-grid">
                 {previewUrls.map((url, index) => (
                   <div className="upload-preview" key={url}>
-                    <img src={url} alt={`参考图 ${index + 1}`} />
+                    <img src={url} alt={`参考图 ${index + 1}`} decoding="async" />
                     <button
                       type="button"
                       aria-label="移除图片"
@@ -227,7 +227,7 @@ export default function GeneratePage() {
             {activeJob.displayError ? <p className="error-text">{activeJob.displayError}</p> : null}
             <JobTimeline job={activeJob} />
             {activeJob.imageUrl ? (
-              <img className="preview" src={activeJob.imageUrl} alt={activeJob.prompt} />
+              <img className="preview" src={activeJob.imageUrl} alt={activeJob.prompt} decoding="async" />
             ) : (
               <div className="empty-preview">
                 <RotateCcw className="h-5 w-5" />

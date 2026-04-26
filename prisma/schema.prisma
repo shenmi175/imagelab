@@ -132,6 +132,9 @@ model ImageJob {
   resultPath      String?
   resultMime      String?
   resultBytes     Int?
+  thumbnailPath   String?
+  thumbnailMime   String?
+  thumbnailBytes  Int?
   resultDeletedAt DateTime?
 
   errorCode         String?

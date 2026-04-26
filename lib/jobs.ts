@@ -19,12 +19,13 @@ export type PendingInputImage = {
   name?: string;
 };
 
-export function imageUrls(job: { id: string; status: JobStatus; resultDeletedAt: Date | null }) {
+export function imageUrls(job: { id: string; status: JobStatus; resultDeletedAt: Date | null; thumbnailPath?: string | null }) {
   if (job.status !== JobStatus.COMPLETED || job.resultDeletedAt) {
-    return { imageUrl: null, downloadUrl: null };
+    return { imageUrl: null, thumbnailUrl: null, downloadUrl: null };
   }
   return {
     imageUrl: `/api/image-jobs/${job.id}/image`,
+    thumbnailUrl: job.thumbnailPath ? `/api/image-jobs/${job.id}/thumbnail` : `/api/image-jobs/${job.id}/image`,
     downloadUrl: `/api/image-jobs/${job.id}/download`
   };
 }
@@ -189,6 +190,7 @@ export function publicJob(job: {
   completedAt: Date | null;
   errorCode: string | null;
   errorMessage: string | null;
+  thumbnailPath: string | null;
   resultDeletedAt: Date | null;
 }) {
   const urls = imageUrls(job);
@@ -213,6 +215,7 @@ export function publicJob(job: {
     errorMessage: job.errorMessage,
     displayError: friendlyErrorMessage(job.errorCode, job.errorMessage),
     imageUrl: urls.imageUrl,
+    thumbnailUrl: urls.thumbnailUrl,
     downloadUrl: urls.downloadUrl
   };
 }

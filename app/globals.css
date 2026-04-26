@@ -185,8 +185,7 @@ a {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 28px;
-  box-shadow: 0 24px 70px hsl(var(--shadow-color) / 0.14);
-  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 42px hsl(var(--shadow-color) / 0.1);
 }
 
 .hero {
@@ -354,6 +353,7 @@ a {
   flex-direction: column;
   height: 100%;
   padding: 1rem;
+  backdrop-filter: blur(16px);
 }
 
 .sidebar-brand,
@@ -433,6 +433,7 @@ a {
   top: 1rem;
   z-index: 10;
   padding: 0.8rem 1rem;
+  backdrop-filter: blur(16px);
 }
 
 .topbar-left,
@@ -807,7 +808,7 @@ a {
 
 .gallery-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 28px 76px hsl(var(--shadow-color) / 0.18);
+  box-shadow: 0 18px 46px hsl(var(--shadow-color) / 0.14);
 }
 
 .gallery-card img,
@@ -942,6 +943,75 @@ a {
   height: 100%;
   overflow: auto;
   padding: 1.2rem;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+}
+
+.skeleton-panel,
+.skeleton-grid span,
+.skeleton-panel span,
+.skeleton-panel strong,
+.skeleton-panel p {
+  overflow: hidden;
+  position: relative;
+  min-height: 1rem;
+  border-radius: 18px;
+  background: hsl(var(--muted) / 0.56);
+}
+
+.skeleton-panel {
+  min-height: 10rem;
+}
+
+.skeleton-panel::after,
+.skeleton-grid span::after,
+.skeleton-panel span::after,
+.skeleton-panel strong::after,
+.skeleton-panel p::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, hsl(var(--card) / 0.55), transparent);
+  animation: shimmer 1.35s infinite;
+}
+
+.skeleton-panel span {
+  display: block;
+  width: 8rem;
+  height: 1rem;
+}
+
+.skeleton-panel strong {
+  display: block;
+  width: min(24rem, 80%);
+  height: 4rem;
+  margin-top: 1rem;
+}
+
+.skeleton-panel p {
+  width: min(34rem, 90%);
+  height: 1rem;
+  margin-top: 1rem;
+}
+
+.skeleton-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.skeleton-grid span {
+  display: block;
+  height: 5rem;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .mobile-only {
