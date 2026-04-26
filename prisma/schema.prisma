@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum JobStatus {
+  PENDING_ENQUEUE
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  dailyQuota   Int      @default(3)
+  isDisabled   Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions  Session[]
+  imageJobs ImageJob[]
+  usageLogs UsageLog[]
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     Int
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model InviteCode {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  usedById    Int?
+  usedAt      DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  createdById Int?
+
+  @@index([usedById])
+  @@index([expiresAt])
+}
+
+model ImageJob {
+  id     String @id @default(cuid())
+  userId Int
+
+  model        String
+  prompt       String
+  size         String
+  quality      String
+  outputFormat String
+
+  status     JobStatus @default(PENDING_ENQUEUE)
+  queueJobId String?   @unique
+
+  attempts      Int       @default(0)
+  workerId      String?
+  lockedAt      DateTime?
+  lockExpiresAt DateTime?
+
+  resultPath      String?
+  resultMime      String?
+  resultBytes     Int?
+  resultDeletedAt DateTime?
+
+  errorCode         String?
+  errorMessage      String?
+  upstreamStatus    Int?
+  upstreamRequestId String?
+
+  quotaDate       String
+  quotaCharged    Boolean   @default(true)
+  quotaRefundedAt DateTime?
+
+  requestIpHash String?
+  userAgent     String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  queuedAt    DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageLogs UsageLog[]
+  outbox    QueueOutbox?
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([status, lockExpiresAt])
+  @@index([quotaDate, userId])
+}
+
+model QueueOutbox {
+  id         String       @id @default(cuid())
+  imageJobId String       @unique
+  status     OutboxStatus @default(PENDING)
+  attempts   Int          @default(0)
+  lastError  String?
+  nextRunAt  DateTime     @default(now())
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  imageJob ImageJob @relation(fields: [imageJobId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+}
+
+model UsageLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  imageJobId String?
+  action     String
+  status     String
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  imageJob ImageJob? @relation(fields: [imageJobId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([imageJobId])
+}

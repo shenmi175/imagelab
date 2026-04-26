@@ -1,0 +1,12 @@
+node_modules
+.next
+.codex
+.env
+.env.local
+.env.*.local
+storage/generated/*
+!storage/generated/.gitkeep
+coverage
+dist
+npm-debug.log*
+*.tsbuildinfo
