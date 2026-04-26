@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { apiFetch } from "@/components/api";
+import { AuthOceanVisual } from "@/components/auth/AuthOceanVisual";
 import { Turnstile } from "@/components/Turnstile";
 
 export default function LoginPage() {
@@ -34,24 +35,40 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="hero">
-      <section className="card" style={{ padding: "2rem" }}>
-        <p className="muted">Private beta</p>
-        <h1 className="hero-title">Login to make images.</h1>
-        <p className="muted" style={{ fontSize: "1.05rem", maxWidth: 560 }}>
-          任务会进入后台队列，不会让浏览器等待长时间请求。
-        </p>
-      </section>
-      <form className="card grid" style={{ padding: "2rem", alignSelf: "center" }} onSubmit={submit}>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: "2.2rem" }}>登录</h2>
-        <input className="input" placeholder="邮箱" value={email} onChange={(event) => setEmail(event.target.value)} />
-        <input className="input" placeholder="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+    <main className="auth-experience">
+      <AuthOceanVisual
+        eyebrow="Private beta"
+        title={
+          <>
+            Login to
+            <br />
+            make images.
+          </>
+        }
+        description="任务会进入后台队列，图片生成、编辑和下载都在同一个工作台完成。"
+        meta="Image generation"
+      />
+
+      <form className="auth-panel card" onSubmit={submit}>
+        <div className="auth-form-header">
+          <p className="muted">Secure access</p>
+          <h2>登录</h2>
+          <p className="muted">使用账号进入图像生成体验站。</p>
+        </div>
+        <label className="auth-field">
+          <span>邮箱</span>
+          <input className="input" placeholder="you@example.com" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+        </label>
+        <label className="auth-field">
+          <span>密码</span>
+          <input className="input" placeholder="输入密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        </label>
         <Turnstile key={turnstileKey} action="login" onToken={setTurnstileToken} />
-        {error ? <p style={{ color: "#9b2c1f" }}>{error}</p> : null}
-        <button className="button" disabled={loading}>
+        {error ? <p className="error-text">{error}</p> : null}
+        <button className="button auth-submit" disabled={loading}>
           {loading ? "登录中..." : "登录"}
         </button>
-        <p className="muted">
+        <p className="muted auth-link-row">
           没有账号？ <Link href="/register">使用邀请码注册</Link>
         </p>
       </form>
