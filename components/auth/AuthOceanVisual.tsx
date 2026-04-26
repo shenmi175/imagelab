@@ -4,23 +4,25 @@ export function AuthOceanVisual({
   eyebrow,
   title,
   description,
-  meta
+  meta,
+  metaLabel = "队列优先"
 }: {
   eyebrow: string;
   title: ReactNode;
-  description: string;
+  description?: string;
   meta: string;
+  metaLabel?: string;
 }) {
   return (
     <section className="auth-visual card">
       <div className="auth-visual-copy">
         <p className="auth-eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </div>
 
       <div className="auth-visual-meta">
-        <span>Queue first</span>
+        <span>{metaLabel}</span>
         <strong>{meta}</strong>
       </div>
 

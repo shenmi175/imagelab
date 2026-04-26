@@ -37,16 +37,15 @@ export default function LoginPage() {
   return (
     <main className="auth-experience">
       <AuthOceanVisual
-        eyebrow="Private beta"
+        eyebrow="内测体验"
         title={
           <>
-            Login to
+            登录
             <br />
-            make images.
+            创作图像
           </>
         }
-        description="任务会进入后台队列，图片生成、编辑和下载都在同一个工作台完成。"
-        meta="Image generation"
+        meta="图像生成"
       />
 
       <form className="auth-panel card" onSubmit={submit}>

@@ -138,6 +138,32 @@ export default function GeneratePage() {
             <span className={prompt.length > 1800 ? "char-count warning" : "char-count"}>{prompt.length} / 2000</span>
           </label>
 
+          <div className="parameter-grid">
+            <div className="parameter-group">
+              <p className="muted">尺寸</p>
+              <div className="option-grid">
+                {sizes.map((item) => (
+                  <button type="button" className={size === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setSize(item.value)}>
+                    <strong>{item.label}</strong>
+                    <span>{item.value}</span>
+                    <small>{item.description}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="parameter-group">
+              <p className="muted">质量</p>
+              <div className="option-grid">
+                {qualities.map((item) => (
+                  <button type="button" className={quality === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setQuality(item.value)}>
+                    <strong>{item.label}</strong>
+                    <small>{item.description}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="upload-panel">
             <div>
               <p className="muted">参考图 / 编辑图</p>
@@ -169,32 +195,6 @@ export default function GeneratePage() {
                 ))}
               </div>
             ) : null}
-          </div>
-
-          <div className="parameter-grid">
-            <div>
-              <p className="muted">尺寸</p>
-              <div className="option-grid">
-                {sizes.map((item) => (
-                  <button type="button" className={size === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setSize(item.value)}>
-                    <strong>{item.label}</strong>
-                    <span>{item.value}</span>
-                    <small>{item.description}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="muted">质量</p>
-              <div className="option-grid">
-                {qualities.map((item) => (
-                  <button type="button" className={quality === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setQuality(item.value)}>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           <div className="action-row">

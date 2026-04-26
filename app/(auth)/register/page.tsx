@@ -38,16 +38,15 @@ export default function RegisterPage() {
   return (
     <main className="auth-experience">
       <AuthOceanVisual
-        eyebrow="Invite only"
+        eyebrow="邀请注册"
         title={
           <>
-            Start with
+            使用邀请码
             <br />
-            a code.
+            开始创作
           </>
         }
-        description="邀请码用于控制免费体验站的滥用风险，注册后即可提交文生图和图像编辑任务。"
-        meta="Private workspace"
+        meta="私有工作台"
       />
 
       <form className="auth-panel card" onSubmit={submit}>

@@ -315,6 +315,7 @@ a {
 
 .public-shell {
   min-height: 100vh;
+  width: min(1320px, calc(100% - 2rem));
 }
 
 .public-nav {
@@ -327,18 +328,18 @@ a {
 
 .auth-experience {
   display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(21rem, 0.88fr);
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1.28fr) minmax(21rem, 0.72fr);
+  gap: 1.15rem;
   align-items: center;
   min-height: calc(100vh - 6rem);
-  padding: 2rem 0 4rem;
+  padding: 1.2rem 0 3rem;
 }
 
 .auth-visual {
   position: relative;
   overflow: hidden;
-  min-height: 38rem;
-  padding: 2rem;
+  min-height: 42rem;
+  padding: 1.65rem;
   isolation: isolate;
   background:
     radial-gradient(circle at 22% 24%, hsl(var(--accent) / 0.2), transparent 18rem),
@@ -374,8 +375,8 @@ a {
   margin: 0;
   color: hsl(var(--foreground));
   font-family: var(--font-display);
-  font-size: clamp(4rem, 8vw, 7.4rem);
-  line-height: 0.82;
+  font-size: clamp(4.4rem, 8.6vw, 8rem);
+  line-height: 0.9;
   letter-spacing: -0.085em;
 }
 
@@ -412,11 +413,11 @@ a {
 
 .ocean-stage {
   position: absolute;
-  right: -3.5rem;
-  bottom: -4.4rem;
-  left: -2rem;
+  right: -7.5rem;
+  bottom: -8.6rem;
+  left: -7rem;
   z-index: 1;
-  height: 73%;
+  height: 92%;
   pointer-events: none;
 }
 
@@ -533,7 +534,7 @@ a {
   display: grid;
   grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
   gap: 1rem;
-  width: min(1440px, calc(100% - 2rem));
+  width: min(1680px, calc(100% - 1rem));
   min-height: 100vh;
   margin: 0 auto;
   padding: 1rem 0;
@@ -765,11 +766,11 @@ a {
 
 .generate-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
   grid-template-areas:
     "creator status"
     "templates status";
-  gap: 1rem;
+  gap: 1.15rem;
   align-items: start;
 }
 
@@ -793,7 +794,7 @@ a {
 .panel-section,
 .result-panel,
 .auth-required {
-  padding: 1.35rem;
+  padding: 1.55rem;
 }
 
 .template-list {
@@ -822,7 +823,7 @@ a {
 }
 
 .prompt-editor .textarea {
-  min-height: 330px;
+  min-height: 270px;
   padding-bottom: 2.5rem;
 }
 
@@ -843,6 +844,15 @@ a {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.parameter-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.parameter-group p {
+  margin: 0;
 }
 
 .upload-panel {
@@ -914,6 +924,7 @@ a {
 
 .option-grid {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
@@ -924,7 +935,8 @@ a {
   border-radius: 18px;
   background: hsl(var(--card) / 0.56);
   color: hsl(var(--foreground));
-  padding: 0.85rem;
+  min-height: 6.2rem;
+  padding: 0.72rem;
   text-align: left;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
@@ -1502,6 +1514,10 @@ a {
   .job-detail-grid,
   .table-row,
   .admin-job-row {
+    grid-template-columns: 1fr;
+  }
+
+  .option-grid {
     grid-template-columns: 1fr;
   }
 
