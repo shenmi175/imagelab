@@ -1,92 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, Search, X } from "lucide-react";
-import { apiFetch, PublicJob } from "@/components/api";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { ExternalLink, Search } from "lucide-react";
+import { apiFetch } from "@/components/api";
+import { AdminTabs } from "@/components/admin/AdminTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { formatDateTime, formatDuration } from "@/lib/duration";
-
-type UserRow = {
-  id: string;
-  email: string;
-  role: string;
-  dailyQuota: number;
-  isDisabled: boolean;
-  createdAt: string;
-  _count: { imageJobs: number };
-};
-
-type InviteCode = {
-  id: number;
-  code: string;
-  usedById: string | null;
-  usedAt: string | null;
-  createdAt: string;
-};
-
-type AdminJob = PublicJob & {
-  userEmail: string;
-  userId: string;
-  upstreamStatus?: number | null;
-  upstreamRequestId?: string | null;
-};
-
-type AdminStats = {
-  users: number;
-  todayJobs: number;
-  completedToday: number;
-  failedToday: number;
-  queuedJobs: number;
-  runningJobs: number;
-  activeWorkers: number;
-  averageGenerationDurationMs: number;
-  averageQueueDurationMs: number;
-};
-
-const statusOptions = [
-  { value: "", label: "全部" },
-  { value: "PENDING_ENQUEUE", label: "入队" },
-  { value: "QUEUED", label: "排队" },
-  { value: "RUNNING", label: "生成中" },
-  { value: "COMPLETED", label: "完成" },
-  { value: "FAILED", label: "失败" }
-];
+import type { AdminStats, UserRow } from "@/components/admin/AdminTypes";
 
 export default function AdminClient() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [jobs, setJobs] = useState<AdminJob[]>([]);
-  const [codes, setCodes] = useState<InviteCode[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [queueBoardUrl, setQueueBoardUrl] = useState("");
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState<{ id: string; email: string } | null>(null);
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    if (search.trim()) params.set("q", search.trim());
-    if (selectedUser) params.set("userId", selectedUser.id);
-    return params.toString();
-  }, [search, selectedUser, status]);
 
   async function load() {
     try {
-      const suffix = queryString ? `?${queryString}` : "";
       const userSuffix = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
-      const [usersData, jobsData, codesData, statsData, configData] = await Promise.all([
+      const [usersData, statsData, configData] = await Promise.all([
         apiFetch<{ items: UserRow[] }>(`/api/admin/users${userSuffix}`),
-        apiFetch<{ items: AdminJob[] }>(`/api/admin/image-jobs${suffix}`),
-        apiFetch<{ items: InviteCode[] }>("/api/admin/invite-codes"),
         apiFetch<AdminStats>("/api/admin/stats"),
         apiFetch<{ queueBoardUrl: string }>("/api/admin/config")
       ]);
       setUsers(usersData.items);
-      setJobs(jobsData.items);
-      setCodes(codesData.items);
       setStats(statsData);
       setQueueBoardUrl(configData.queueBoardUrl);
       setError("");
@@ -104,24 +43,9 @@ export default function AdminClient() {
     await load();
   }
 
-  async function createInvite() {
-    await apiFetch("/api/admin/invite-codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ count: 1 })
-    });
-    await load();
-  }
-
-  async function deleteJob(id: string) {
-    if (!confirm("确定删除该任务和图片文件？")) return;
-    await apiFetch(`/api/admin/image-jobs/${id}`, { method: "DELETE" });
-    await load();
-  }
-
   useEffect(() => {
     void load();
-  }, [queryString]);
+  }, [search]);
 
   const statCards = stats
     ? [
@@ -143,7 +67,7 @@ export default function AdminClient() {
         <div>
           <p className="muted">Admin console</p>
           <h1>后台控制台</h1>
-          <p className="muted">后台已和普通工作台分区；页面和接口都需要 ADMIN 角色。</p>
+          <p className="muted">后台已按用户、用户图片、邀请码、任务管理分区。</p>
         </div>
         {queueBoardUrl ? (
           <a className="button secondary" href={queueBoardUrl} target="_blank" rel="noreferrer">
@@ -152,6 +76,8 @@ export default function AdminClient() {
           </a>
         ) : null}
       </section>
+
+      <AdminTabs />
 
       {error ? <p className="error-text">{error}</p> : null}
 
@@ -172,7 +98,7 @@ export default function AdminClient() {
           </div>
           <div className="search-box">
             <Search className="h-4 w-4" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索邮箱 / 任务 / Job ID" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索用户邮箱" />
           </div>
         </div>
         <div className="table-list">
@@ -188,84 +114,9 @@ export default function AdminClient() {
                 <Button variant={user.isDisabled ? "outline" : "destructive"} onClick={() => updateUser(user, { isDisabled: !user.isDisabled })}>
                   {user.isDisabled ? "启用" : "禁用"}
                 </Button>
-                <Button variant="outline" onClick={() => setSelectedUser({ id: user.id, email: user.email })}>查看图片</Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="card panel-section">
-        <div className="section-heading">
-          <div>
-            <p className="muted">Invites</p>
-            <h2>邀请码</h2>
-          </div>
-          <Button onClick={createInvite}>生成邀请码</Button>
-        </div>
-        <div className="table-list">
-          {codes.map((code) => (
-            <div className="table-row compact" key={code.id}>
-              <div>
-                <strong>{code.code}</strong>
-                <p className="muted">{code.usedAt ? `已使用 by ${code.usedById}` : "未使用"} / {formatDateTime(code.createdAt)}</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(code.code)} aria-label="复制邀请码">
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="card panel-section">
-        <div className="section-heading">
-          <div>
-            <p className="muted">Jobs</p>
-            <h2>任务管理</h2>
-            {selectedUser ? (
-              <p className="muted">
-                当前只看 {selectedUser.email} 的任务。
-                <button className="inline-action" type="button" onClick={() => setSelectedUser(null)}>
-                  <X className="h-3 w-3" />
-                  取消筛选
-                </button>
-              </p>
-            ) : null}
-          </div>
-          <div className="filter-pills">
-            {statusOptions.map((option) => (
-              <button className={status === option.value ? "filter-pill active" : "filter-pill"} key={option.value} onClick={() => setStatus(option.value)}>
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="table-list">
-          {jobs.map((job) => (
-            <div className="table-row admin-job-row" key={job.id}>
-              <div className="admin-job-preview">
-                {job.thumbnailUrl ? (
-                  <a href={job.imageUrl ?? job.thumbnailUrl} target="_blank" rel="noreferrer">
-                    <img src={job.thumbnailUrl} alt={job.prompt} loading="lazy" decoding="async" />
-                  </a>
-                ) : (
-                  <span>{job.statusLabel}</span>
-                )}
-              </div>
-              <div>
-                <JobStatusBadge job={job} />
-                <p>{job.prompt.slice(0, 180)}</p>
-                <p className="muted">
-                  {job.userEmail} / {job.mode === "EDIT" ? `编辑 ${job.inputImageCount} 图` : "文生图"} / {job.errorCode ?? "no error"} / upstream {job.upstreamStatus ?? "-"} / 生成 {formatDuration(job.generationDurationMs)}
-                </p>
-                {job.upstreamRequestId ? <p className="muted">request {job.upstreamRequestId}</p> : null}
-              </div>
-              <div className="action-row">
-                <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(job.id)} aria-label="复制 Job ID">
-                  <Copy className="h-4 w-4" />
-                </Button>
-                <Button variant="destructive" onClick={() => deleteJob(job.id)}>删除图片</Button>
+                <Link className="button secondary" href={`/admin/images?userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email)}`}>
+                  查看图片
+                </Link>
               </div>
             </div>
           ))}

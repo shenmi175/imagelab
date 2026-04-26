@@ -534,6 +534,31 @@ a {
   max-width: 44rem;
 }
 
+.admin-tabs {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding: 0.45rem;
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: hsl(var(--muted-foreground));
+  padding: 0.72rem 1rem;
+  font-weight: 850;
+  white-space: nowrap;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.admin-tab:hover,
+.admin-tab.active {
+  background: hsl(var(--primary) / 0.14);
+  color: hsl(var(--foreground));
+}
+
 .generate-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem);
