@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { apiFetch } from "@/components/api";
 import { Turnstile } from "@/components/Turnstile";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -26,7 +24,7 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, inviteCode, turnstileToken })
       });
-      router.push("/generate");
+      window.location.assign("/generate");
     } catch (err) {
       setError(err instanceof Error ? err.message : "注册失败");
       setTurnstileToken("");

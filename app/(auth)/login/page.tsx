@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { apiFetch } from "@/components/api";
 import { Turnstile } from "@/components/Turnstile";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +23,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, turnstileToken })
       });
-      router.push("/generate");
+      window.location.assign("/generate");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
       setTurnstileToken("");
