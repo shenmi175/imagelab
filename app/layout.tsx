@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,21 +12,27 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body>
-        <div className="shell">
-          <header className="nav">
-            <Link href="/dashboard" className="brand">
-              Image Lab
-            </Link>
-            <nav style={{ display: "flex", gap: "0.7rem", alignItems: "center", flexWrap: "wrap" }}>
-              <Link href="/generate">生成</Link>
-              <Link href="/dashboard">任务</Link>
-              <Link href="/admin">管理</Link>
-            </nav>
-          </header>
-          {children}
-        </div>
+        <ThemeProvider>
+          <div className="shell">
+            <header className="nav">
+              <Link href="/dashboard" className="brand">
+                Image Lab
+              </Link>
+              <div className="nav-actions">
+                <nav className="nav-links" aria-label="主导航">
+                  <Link className="nav-link" href="/generate">生成</Link>
+                  <Link className="nav-link" href="/dashboard">任务</Link>
+                  <Link className="nav-link" href="/admin">管理</Link>
+                </nav>
+                <ThemeToggle />
+              </div>
+            </header>
+            {children}
+          </div>
+          <Toaster richColors position="top-right" />
+        </ThemeProvider>
       </body>
     </html>
   );
