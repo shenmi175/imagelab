@@ -6,6 +6,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-q
 import { toast } from "sonner";
 import { Copy, Download, RefreshCw, Sparkles } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
+import { StorageNotice } from "@/components/app/StorageNotice";
 import { Button } from "@/components/ui/button";
 import { JobDetailDrawer } from "@/components/job/JobDetailDrawer";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
@@ -100,6 +101,8 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
           </button>
         ))}
       </div>
+
+      <StorageNotice />
 
       {jobsQuery.isLoading ? <p className="muted">加载中...</p> : null}
       {jobsQuery.error ? <p className="error-text">{jobsQuery.error instanceof Error ? jobsQuery.error.message : "加载失败"}</p> : null}

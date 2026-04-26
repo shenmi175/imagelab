@@ -859,6 +859,30 @@ a {
   background: hsl(var(--primary) / 0.13);
 }
 
+.storage-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border: 1px solid hsl(var(--warning) / 0.34);
+  border-radius: 18px;
+  background: hsl(var(--warning) / 0.12);
+  color: hsl(var(--foreground));
+  padding: 0.85rem 1rem;
+}
+
+.storage-notice strong {
+  white-space: nowrap;
+}
+
+.storage-notice span {
+  color: hsl(var(--muted-foreground));
+}
+
+.storage-notice.compact {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .icon-button {
   width: 2.4rem;
   height: 2.4rem;
@@ -900,6 +924,42 @@ a {
   color: hsl(var(--foreground));
   padding: 1rem 0;
   text-align: left;
+}
+
+.admin-job-row {
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+}
+
+.admin-job-preview {
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  border: 1px solid hsl(var(--border) / 0.72);
+  border-radius: 16px;
+  background: hsl(var(--muted) / 0.4);
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.admin-job-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 0;
+  background: transparent;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  font-weight: 800;
 }
 
 .table-row.compact {
@@ -1098,7 +1158,8 @@ a {
   .generate-workspace,
   .parameter-grid,
   .job-detail-grid,
-  .table-row {
+  .table-row,
+  .admin-job-row {
     grid-template-columns: 1fr;
   }
 
@@ -1143,6 +1204,10 @@ a {
 
   .task-row-metrics {
     justify-items: start;
+  }
+
+  .storage-notice {
+    display: grid;
   }
 }
 

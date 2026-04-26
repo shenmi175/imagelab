@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowRight, Copy, ImagePlus, RotateCcw, Sparkles, X } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
+import { StorageNotice } from "@/components/app/StorageNotice";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { JobTimeline } from "@/components/job/JobTimeline";
@@ -126,6 +127,7 @@ export default function GeneratePage() {
         </div>
 
         <form className="grid" onSubmit={submit}>
+          <StorageNotice />
           <label className="prompt-editor">
             <textarea
               className="textarea"
@@ -224,6 +226,7 @@ export default function GeneratePage() {
             <JobTimer job={activeJob} />
             <p className="muted">{activeJob.mode === "EDIT" ? `图像编辑任务 / 参考图 ${activeJob.inputImageCount} 张` : "文生图任务"}</p>
             <p className="muted">图片生成通常需要几十秒到数分钟，页面会自动刷新状态。</p>
+            <StorageNotice compact />
             {activeJob.displayError ? <p className="error-text">{activeJob.displayError}</p> : null}
             <JobTimeline job={activeJob} />
             {activeJob.imageUrl ? (

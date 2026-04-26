@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, Search } from "lucide-react";
+import { Copy, ExternalLink, Search, X } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,13 +63,15 @@ export default function AdminClient() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState<{ id: string; email: string } | null>(null);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (search.trim()) params.set("q", search.trim());
+    if (selectedUser) params.set("userId", selectedUser.id);
     return params.toString();
-  }, [search, status]);
+  }, [search, selectedUser, status]);
 
   async function load() {
     try {
@@ -186,6 +188,7 @@ export default function AdminClient() {
                 <Button variant={user.isDisabled ? "outline" : "destructive"} onClick={() => updateUser(user, { isDisabled: !user.isDisabled })}>
                   {user.isDisabled ? "启用" : "禁用"}
                 </Button>
+                <Button variant="outline" onClick={() => setSelectedUser({ id: user.id, email: user.email })}>查看图片</Button>
               </div>
             </div>
           ))}
@@ -220,6 +223,15 @@ export default function AdminClient() {
           <div>
             <p className="muted">Jobs</p>
             <h2>任务管理</h2>
+            {selectedUser ? (
+              <p className="muted">
+                当前只看 {selectedUser.email} 的任务。
+                <button className="inline-action" type="button" onClick={() => setSelectedUser(null)}>
+                  <X className="h-3 w-3" />
+                  取消筛选
+                </button>
+              </p>
+            ) : null}
           </div>
           <div className="filter-pills">
             {statusOptions.map((option) => (
@@ -231,7 +243,16 @@ export default function AdminClient() {
         </div>
         <div className="table-list">
           {jobs.map((job) => (
-            <div className="table-row" key={job.id}>
+            <div className="table-row admin-job-row" key={job.id}>
+              <div className="admin-job-preview">
+                {job.thumbnailUrl ? (
+                  <a href={job.imageUrl ?? job.thumbnailUrl} target="_blank" rel="noreferrer">
+                    <img src={job.thumbnailUrl} alt={job.prompt} loading="lazy" decoding="async" />
+                  </a>
+                ) : (
+                  <span>{job.statusLabel}</span>
+                )}
+              </div>
               <div>
                 <JobStatusBadge job={job} />
                 <p>{job.prompt.slice(0, 180)}</p>
@@ -244,7 +265,7 @@ export default function AdminClient() {
                 <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(job.id)} aria-label="复制 Job ID">
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button variant="destructive" onClick={() => deleteJob(job.id)}>删除</Button>
+                <Button variant="destructive" onClick={() => deleteJob(job.id)}>删除图片</Button>
               </div>
             </div>
           ))}

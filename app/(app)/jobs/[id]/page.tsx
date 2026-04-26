@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, RotateCcw } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
+import { StorageNotice } from "@/components/app/StorageNotice";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { JobTimeline } from "@/components/job/JobTimeline";
@@ -57,6 +58,7 @@ export default function JobDetailPage() {
         <section className="job-detail-grid">
           <div className="card panel-section">
             <div className="grid">
+              <StorageNotice />
               <JobTimer job={job} />
               <p>{job.prompt}</p>
               <p className="muted">

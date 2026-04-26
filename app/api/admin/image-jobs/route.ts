@@ -14,8 +14,10 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
     const q = url.searchParams.get("q")?.trim();
+    const userId = url.searchParams.get("userId")?.trim();
     const jobs = await prisma.imageJob.findMany({
       where: {
+        ...(userId ? { userId } : {}),
         ...(status && statuses.has(status) ? { status: status as JobStatus } : {}),
         ...(q
           ? {
