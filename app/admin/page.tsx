@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, PublicJob } from "@/components/api";
 
 type UserRow = {
-  id: number;
+  id: string;
   email: string;
   role: string;
   dailyQuota: number;
@@ -16,14 +16,14 @@ type UserRow = {
 type InviteCode = {
   id: number;
   code: string;
-  usedById: number | null;
+  usedById: string | null;
   usedAt: string | null;
   createdAt: string;
 };
 
 type AdminJob = PublicJob & {
   userEmail: string;
-  userId: number;
+  userId: string;
   errorCode?: string | null;
   upstreamStatus?: number | null;
 };
@@ -33,20 +33,23 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [codes, setCodes] = useState<InviteCode[]>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
+  const [queueBoardUrl, setQueueBoardUrl] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
     try {
-      const [usersData, jobsData, codesData, statsData] = await Promise.all([
+      const [usersData, jobsData, codesData, statsData, configData] = await Promise.all([
         apiFetch<{ items: UserRow[] }>("/api/admin/users"),
         apiFetch<{ items: AdminJob[] }>("/api/admin/image-jobs"),
         apiFetch<{ items: InviteCode[] }>("/api/admin/invite-codes"),
-        apiFetch<Record<string, number>>("/api/admin/stats")
+        apiFetch<Record<string, number>>("/api/admin/stats"),
+        apiFetch<{ queueBoardUrl: string }>("/api/admin/config")
       ]);
       setUsers(usersData.items);
       setJobs(jobsData.items);
       setCodes(codesData.items);
       setStats(statsData);
+      setQueueBoardUrl(configData.queueBoardUrl);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
@@ -86,6 +89,13 @@ export default function AdminPage() {
       <section className="card" style={{ padding: "2rem" }}>
         <p className="muted">Admin</p>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: "4rem", lineHeight: 1 }}>管理后台</h1>
+        {queueBoardUrl ? (
+          <p>
+            <a className="button secondary" href={queueBoardUrl} target="_blank" rel="noreferrer">
+              打开队列看板
+            </a>
+          </p>
+        ) : null}
         {error ? <p style={{ color: "#9b2c1f" }}>{error}</p> : null}
         <div className="grid three">
           {Object.entries(stats).map(([key, value]) => (

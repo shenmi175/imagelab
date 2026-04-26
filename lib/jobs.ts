@@ -19,7 +19,7 @@ export function imageUrls(job: { id: string; status: JobStatus; resultDeletedAt:
 }
 
 export async function createImageJob(input: {
-  user: { id: number; role: UserRole; dailyQuota: number; isDisabled: boolean };
+  user: { id: string; role: UserRole; dailyQuota: number; isDisabled: boolean };
   prompt: string;
   size: string;
   quality: string;
@@ -32,7 +32,7 @@ export async function createImageJob(input: {
 
   const imageJob = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${GLOBAL_QUEUE_LOCK})`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE + input.user.id})`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE}, hashtext(${input.user.id}))`;
 
     const user = await tx.user.findUnique({ where: { id: input.user.id } });
     if (!user) throw new ApiError("UNAUTHORIZED", "请先登录", 401);
@@ -105,7 +105,7 @@ export async function createImageJob(input: {
   return prisma.imageJob.findUniqueOrThrow({ where: { id: imageJob.id } });
 }
 
-export async function getAuthorizedJob(id: string, user: { id: number; role: UserRole }) {
+export async function getAuthorizedJob(id: string, user: { id: string; role: UserRole }) {
   const job = await prisma.imageJob.findUnique({ where: { id } });
   if (!job) throw new ApiError("JOB_NOT_FOUND", "任务不存在", 404);
   if (user.role !== UserRole.ADMIN && job.userId !== user.id) {
@@ -114,7 +114,7 @@ export async function getAuthorizedJob(id: string, user: { id: number; role: Use
   return job;
 }
 
-export async function remainingQuota(user: { id: number; role: UserRole; dailyQuota: number }) {
+export async function remainingQuota(user: { id: string; role: UserRole; dailyQuota: number }) {
   if (env.adminBypassDailyQuota && user.role === UserRole.ADMIN) {
     return 9999;
   }

@@ -1,6 +1,6 @@
-import { clearSession } from "@/lib/auth";
+import { auth } from "@/lib/better-auth";
 import { verifyCsrf } from "@/lib/csrf";
-import { assertSameOrigin, jsonError, jsonOk } from "@/lib/http";
+import { assertSameOrigin, jsonError, jsonOkWithHeaders } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -8,8 +8,12 @@ export async function POST(request: Request) {
   try {
     await assertSameOrigin();
     await verifyCsrf(request);
-    await clearSession();
-    return jsonOk({ ok: true });
+    const result = await auth.api.signOut({
+      headers: request.headers,
+      returnHeaders: true,
+      returnStatus: true
+    });
+    return jsonOkWithHeaders({ ok: true }, result.headers, 200);
   } catch (error) {
     return jsonError(error);
   }

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, PublicJob } from "@/components/api";
 
 type MeResponse = {
-  user: { id: number; email: string; role: string; dailyQuota: number } | null;
+  user: { id: string; email: string; role: string; dailyQuota: number } | null;
   remainingQuota?: number;
 };
 

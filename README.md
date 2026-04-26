@@ -10,13 +10,15 @@ chmod +x start.sh
 ```
 
 首次运行会自动创建 `.env` 并生成 `SESSION_SECRET`。然后编辑 `.env`：
-首次终端输出会显示随机管理员密码。
+首次终端输出会显示随机管理员密码和 Bull Board 密码。
 
 ```env
 SUB2API_BASE_URL=http://host.docker.internal:8080
 SUB2API_API_KEY=你的Sub2API密钥
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=首次自动生成或你自己设置的强密码
+QUEUE_BOARD_USERNAME=admin
+QUEUE_BOARD_PASSWORD=首次自动生成或你自己设置的强密码
 ```
 
 再次运行：
@@ -35,6 +37,12 @@ http://localhost:3005
 
 ```text
 http://localhost:3005/admin
+```
+
+队列看板使用 Bull Board，默认地址：
+
+```text
+http://localhost:3006/admin/queues
 ```
 
 如果已经初始化过数据库后还需要重置管理员密码：
@@ -66,6 +74,9 @@ npm run worker
 
 - Sub2API key 只存在后端和 Worker 环境变量中，不返回给前端。
 - 图片文件不通过静态目录公开，预览和下载都走鉴权 API。
+- 登录注册由 Better Auth 管理账号、密码和会话。
+- 登录注册可配置 Cloudflare Turnstile，开启 `TURNSTILE_SITE_KEY` 和 `TURNSTILE_SECRET_KEY` 后生效。
+- Bull Board 独立服务运行，并使用 Basic Auth 保护。
 - 创建任务使用 PostgreSQL advisory lock，避免并发绕过每日额度和 active job 限制。
 - 使用 `QueueOutbox` 恢复 DB 成功但 Redis 入队失败的任务。
 - Worker 使用 `lockExpiresAt` 和 reconciler 恢复崩溃后卡住的 `RUNNING` 任务。

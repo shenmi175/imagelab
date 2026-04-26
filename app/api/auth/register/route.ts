@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { ApiError, assertSameOrigin, jsonError, jsonOk, requestIpHash } from "@/lib/http";
-import { createSession, hashPassword, publicUser } from "@/lib/auth";
+import { ApiError, assertSameOrigin, jsonError, jsonOkWithHeaders, requestIpHash } from "@/lib/http";
+import { auth } from "@/lib/better-auth";
+import { publicUser } from "@/lib/auth";
 import { verifyCsrf } from "@/lib/csrf";
 import { rateLimit } from "@/lib/rate-limit";
 import { env } from "@/lib/env";
@@ -23,35 +24,48 @@ export async function POST(request: Request) {
     const inviteCode = typeof body.inviteCode === "string" ? body.inviteCode.trim() : "";
     if (!inviteCode) throw new ApiError("INVALID_INPUT", "邀请码不能为空", 400);
 
-    const passwordHash = await hashPassword(password);
-    const user = await prisma.$transaction(async (tx) => {
-      const invite = await tx.inviteCode.findUnique({ where: { code: inviteCode } });
-      if (!invite || invite.usedAt || (invite.expiresAt && invite.expiresAt <= new Date())) {
-        throw new ApiError("INVALID_INPUT", "邀请码无效或已使用", 400);
-      }
+    const invite = await prisma.inviteCode.findUnique({ where: { code: inviteCode } });
+    if (!invite || invite.usedAt || (invite.expiresAt && invite.expiresAt <= new Date())) {
+      throw new ApiError("INVALID_INPUT", "邀请码无效或已使用", 400);
+    }
 
-      const created = await tx.user.create({
-        data: {
+    let authResult;
+    try {
+      authResult = await auth.api.signUpEmail({
+        body: {
+          name: email,
           email,
-          passwordHash,
-          dailyQuota: env.defaultDailyQuota
-        }
+          password,
+          rememberMe: true
+        },
+        headers: request.headers,
+        returnHeaders: true,
+        returnStatus: true
       });
+    } catch {
+      return Response.json({ error: "INVALID_INPUT", message: "邮箱已被注册或密码不符合要求" }, { status: 400 });
+    }
 
-      await tx.inviteCode.update({
-        where: { id: invite.id },
-        data: { usedById: created.id, usedAt: new Date() }
-      });
-
-      await tx.usageLog.create({
-        data: { userId: created.id, action: "REGISTER", status: "OK" }
-      });
-
-      return created;
+    const claimed = await prisma.inviteCode.updateMany({
+      where: {
+        id: invite.id,
+        usedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+      },
+      data: { usedById: authResult.response.user.id, usedAt: new Date() }
     });
 
-    await createSession(user.id);
-    return jsonOk({ ok: true, user: publicUser(user) }, 201);
+    if (claimed.count !== 1) {
+      await prisma.user.delete({ where: { id: authResult.response.user.id } }).catch(() => undefined);
+      throw new ApiError("INVALID_INPUT", "邀请码无效或已使用", 400);
+    }
+
+    await prisma.usageLog.create({
+      data: { userId: authResult.response.user.id, action: "REGISTER", status: "OK" }
+    });
+
+    const createdUser = await prisma.user.findUniqueOrThrow({ where: { id: authResult.response.user.id } });
+    return jsonOkWithHeaders({ ok: true, user: publicUser(createdUser) }, authResult.headers, 201);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "P2002") {
       return Response.json({ error: "INVALID_INPUT", message: "邮箱已被注册" }, { status: 400 });

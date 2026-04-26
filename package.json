@@ -7,6 +7,7 @@
     "build": "prisma generate && next build --webpack",
     "start": "next start",
     "worker": "tsx worker/image-worker.ts",
+    "queue-board": "tsx scripts/queue-board.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
@@ -17,17 +18,23 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@better-auth/prisma-adapter": "^1.6.9",
+    "@bull-board/api": "^7.0.0",
+    "@bull-board/express": "^7.0.0",
     "@prisma/client": "^6.8.2",
     "argon2": "^0.41.1",
+    "better-auth": "^1.6.9",
     "bullmq": "^5.56.0",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "ioredis": "^5.6.1",
     "next": "^16.2.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "zod": "^3.25.67"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.32",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",

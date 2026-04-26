@@ -83,6 +83,20 @@ services:
     networks:
       - image-site
 
+  queue-board:
+    build: .
+    container_name: image-site-queue-board
+    command: npm run queue-board
+    env_file:
+      - .env
+    ports:
+      - "${QUEUE_BOARD_PUBLIC_PORT:-3006}:${QUEUE_BOARD_PORT:-3001}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - image-site
+
 volumes:
   image_site_postgres:
   image_site_redis:

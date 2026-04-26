@@ -29,8 +29,26 @@ export class ApiError extends Error {
   }
 }
 
-export function jsonOk<T>(data: T, status = 200) {
-  return NextResponse.json(data, { status });
+export function jsonOk<T>(data: T, status = 200, headers?: HeadersInit) {
+  return NextResponse.json(data, { status, headers });
+}
+
+export function jsonOkWithHeaders<T>(data: T, headers: Headers, status = 200) {
+  const response = NextResponse.json(data, { status });
+  headers.forEach((value, key) => {
+    if (key.toLowerCase() !== "set-cookie") response.headers.set(key, value);
+  });
+
+  const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const cookies = typeof getSetCookie === "function" ? getSetCookie.call(headers) : [];
+  if (cookies.length) {
+    for (const cookie of cookies) response.headers.append("set-cookie", cookie);
+  } else {
+    const cookie = headers.get("set-cookie");
+    if (cookie) response.headers.append("set-cookie", cookie);
+  }
+
+  return response;
 }
 
 export function jsonError(error: unknown) {

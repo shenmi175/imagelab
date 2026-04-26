@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { assertSameOrigin, jsonError, jsonOk, requestIpHash } from "@/lib/http";
-import { createSession, publicUser, verifyPassword } from "@/lib/auth";
+import { assertSameOrigin, jsonError, jsonOkWithHeaders, requestIpHash } from "@/lib/http";
+import { auth } from "@/lib/better-auth";
+import { publicUser } from "@/lib/auth";
 import { verifyCsrf } from "@/lib/csrf";
 import { rateLimit } from "@/lib/rate-limit";
 import { env } from "@/lib/env";
@@ -23,20 +24,28 @@ export async function POST(request: Request) {
     await verifyTurnstile(body.turnstileToken);
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !(await verifyPassword(user.passwordHash, password))) {
+    if (user?.isDisabled) {
+      return Response.json({ error: "USER_DISABLED", message: "账号已被禁用" }, { status: 403 });
+    }
+
+    let authResult;
+    try {
+      authResult = await auth.api.signInEmail({
+        body: { email, password, rememberMe: true },
+        headers: request.headers,
+        returnHeaders: true,
+        returnStatus: true
+      });
+    } catch {
       if (user) {
         await prisma.usageLog.create({ data: { userId: user.id, action: "LOGIN", status: "FAILED" } });
       }
       return Response.json({ error: "INVALID_INPUT", message: "邮箱或密码错误" }, { status: 400 });
     }
 
-    if (user.isDisabled) {
-      return Response.json({ error: "USER_DISABLED", message: "账号已被禁用" }, { status: 403 });
-    }
-
-    await createSession(user.id);
-    await prisma.usageLog.create({ data: { userId: user.id, action: "LOGIN", status: "OK" } });
-    return jsonOk({ ok: true, user: publicUser(user) });
+    const signedInUser = await prisma.user.findUniqueOrThrow({ where: { id: authResult.response.user.id } });
+    await prisma.usageLog.create({ data: { userId: signedInUser.id, action: "LOGIN", status: "OK" } });
+    return jsonOkWithHeaders({ ok: true, user: publicUser(signedInUser) }, authResult.headers, 200);
   } catch (error) {
     return jsonError(error);
   }
