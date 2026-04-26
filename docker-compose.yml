@@ -59,7 +59,7 @@ services:
     env_file:
       - .env
     ports:
-      - "3005:3000"
+      - "127.0.0.1:3005:3000"
     volumes:
       - ./storage:/app/storage
     extra_hosts:
@@ -106,7 +106,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${QUEUE_BOARD_PUBLIC_PORT:-3006}:${QUEUE_BOARD_PORT:-3001}"
+      - "127.0.0.1:${QUEUE_BOARD_PUBLIC_PORT:-3006}:${QUEUE_BOARD_PORT:-3001}"
     depends_on:
       redis:
         condition: service_healthy
