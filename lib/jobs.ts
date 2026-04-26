@@ -32,7 +32,7 @@ export async function createImageJob(input: {
 
   const imageJob = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${GLOBAL_QUEUE_LOCK})`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE}, hashtext(${input.user.id}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE}::integer, hashtext(${input.user.id}))`;
 
     const user = await tx.user.findUnique({ where: { id: input.user.id } });
     if (!user) throw new ApiError("UNAUTHORIZED", "请先登录", 401);
