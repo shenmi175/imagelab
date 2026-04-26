@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { ImageGenerationPayload, enqueuePendingJob, ensureQueued } from "@/lib/queue";
-import { saveImageFile } from "@/lib/storage";
+import { parseStoredInputImages, readImageFile, saveImageFile } from "@/lib/storage";
 import { GenerationError, classifyUpstreamError } from "@/lib/upstream-errors";
 
 const workerId = `${os.hostname()}-${process.pid}-${randomUUID()}`;
@@ -97,21 +97,47 @@ async function processImageJob(payload: ImageGenerationPayload) {
   if (!job) return;
 
   try {
-    const response = await fetch(`${env.sub2apiBaseUrl}/v1/images/generations`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.sub2apiApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: job.model,
-        prompt: job.prompt,
-        size: job.size,
-        quality: job.quality,
-        output_format: job.outputFormat
-      }),
-      signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
-    });
+    const inputImages = parseStoredInputImages(job.inputImages);
+    let response: Response;
+
+    if (inputImages.length) {
+      const formData = new FormData();
+      formData.set("model", job.model);
+      formData.set("prompt", job.prompt);
+      formData.set("size", job.size);
+      formData.set("quality", job.quality);
+      formData.set("output_format", job.outputFormat);
+
+      for (const image of inputImages) {
+        const buffer = await readImageFile(image.path);
+        formData.append("image[]", new Blob([new Uint8Array(buffer)], { type: image.mime }), image.name);
+      }
+
+      response = await fetch(`${env.sub2apiBaseUrl}/v1/images/edits`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.sub2apiApiKey}`
+        },
+        body: formData,
+        signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
+      });
+    } else {
+      response = await fetch(`${env.sub2apiBaseUrl}/v1/images/generations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.sub2apiApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: job.model,
+          prompt: job.prompt,
+          size: job.size,
+          quality: job.quality,
+          output_format: job.outputFormat
+        }),
+        signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
+      });
+    }
 
     const text = await response.text();
     const upstreamRequestId = response.headers.get("x-request-id");

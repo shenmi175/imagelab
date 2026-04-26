@@ -119,7 +119,7 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
                   <span className="muted">{formatDuration(job.generationDurationMs)}</span>
                 </div>
                 <p>{job.prompt.slice(0, 96)}</p>
-                <p className="muted">{job.size} / {job.quality} / {formatDateTime(job.createdAt)}</p>
+                <p className="muted">{job.mode === "EDIT" ? `编辑 / 参考图 ${job.inputImageCount}` : "文生图"} / {job.size} / {job.quality} / {formatDateTime(job.createdAt)}</p>
                 <div className="action-row" onClick={(event) => event.stopPropagation()}>
                   {job.downloadUrl ? (
                     <a className="icon-button" href={job.downloadUrl} aria-label="下载图片">
@@ -145,7 +145,7 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
                 <div>
                   <JobStatusBadge job={job} />
                   <p>{job.prompt.slice(0, 160)}</p>
-                  <p className="muted">{job.size} / {job.quality} / 创建 {formatDateTime(job.createdAt)}</p>
+                  <p className="muted">{job.mode === "EDIT" ? `编辑 / 参考图 ${job.inputImageCount}` : "文生图"} / {job.size} / {job.quality} / 创建 {formatDateTime(job.createdAt)}</p>
                   {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
                 </div>
                 <div className="task-row-metrics">

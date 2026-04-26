@@ -24,6 +24,8 @@ export type PublicJob = {
   id: string;
   prompt: string;
   model: string;
+  mode: string;
+  inputImageCount: number;
   status: "PENDING_ENQUEUE" | "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED" | "EXPIRED";
   statusLabel: string;
   size: string;

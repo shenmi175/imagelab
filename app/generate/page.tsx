@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRight, Copy, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowRight, Copy, ImagePlus, RotateCcw, Sparkles, X } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
@@ -49,6 +49,8 @@ export default function GeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("high");
+  const [inputImages, setInputImages] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const jobQuery = useJob(activeJobId);
   const activeJob = jobQuery.data ?? null;
@@ -58,13 +60,24 @@ export default function GeneratePage() {
     if (initialPrompt) setPrompt(initialPrompt);
   }, []);
 
+  useEffect(() => {
+    const urls = inputImages.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [inputImages]);
+
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<PublicJob>("/api/image-jobs", {
+    mutationFn: () => {
+      const formData = new FormData();
+      formData.set("prompt", prompt);
+      formData.set("size", size);
+      formData.set("quality", quality);
+      inputImages.forEach((file) => formData.append("image[]", file));
+      return apiFetch<PublicJob>("/api/image-jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, size, quality })
-      }),
+        body: formData
+      });
+    },
     onSuccess: (job) => {
       setActiveJobId(job.id);
       queryClient.setQueryData(["job", job.id], job);
@@ -82,6 +95,11 @@ export default function GeneratePage() {
       return;
     }
     createMutation.mutate();
+  }
+
+  function selectImages(files: FileList | null) {
+    const next = Array.from(files ?? []).slice(0, 4);
+    setInputImages(next);
   }
 
   return (
@@ -118,6 +136,39 @@ export default function GeneratePage() {
             <span className={prompt.length > 1800 ? "char-count warning" : "char-count"}>{prompt.length} / 2000</span>
           </label>
 
+          <div className="upload-panel">
+            <div>
+              <p className="muted">参考图 / 编辑图</p>
+              <strong>{inputImages.length ? `已选择 ${inputImages.length} 张图片` : "可选上传，上传后自动走图像编辑接口"}</strong>
+            </div>
+            <label className="upload-drop">
+              <ImagePlus className="h-5 w-5" />
+              <span>选择 PNG / JPG / WEBP，最多 4 张</span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                onChange={(event) => selectImages(event.target.files)}
+              />
+            </label>
+            {previewUrls.length ? (
+              <div className="upload-preview-grid">
+                {previewUrls.map((url, index) => (
+                  <div className="upload-preview" key={url}>
+                    <img src={url} alt={`参考图 ${index + 1}`} />
+                    <button
+                      type="button"
+                      aria-label="移除图片"
+                      onClick={() => setInputImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <div className="parameter-grid">
             <div>
               <p className="muted">尺寸</p>
@@ -147,7 +198,7 @@ export default function GeneratePage() {
           <div className="action-row">
             <Button type="submit" size="lg" disabled={createMutation.isPending || !prompt.trim() || prompt.length > 2000}>
               <Sparkles className="h-4 w-4" />
-              {createMutation.isPending ? "提交中..." : "提交生成"}
+              {createMutation.isPending ? "提交中..." : inputImages.length ? "提交编辑任务" : "提交生成"}
             </Button>
             {activeJob ? (
               <Link className="button secondary" href={`/jobs/${activeJob.id}`}>
@@ -171,6 +222,7 @@ export default function GeneratePage() {
         {activeJob ? (
           <div className="grid">
             <JobTimer job={activeJob} />
+            <p className="muted">{activeJob.mode === "EDIT" ? `图像编辑任务 / 参考图 ${activeJob.inputImageCount} 张` : "文生图任务"}</p>
             <p className="muted">图片生成通常需要几十秒到数分钟，页面会自动刷新状态。</p>
             {activeJob.displayError ? <p className="error-text">{activeJob.displayError}</p> : null}
             <JobTimeline job={activeJob} />

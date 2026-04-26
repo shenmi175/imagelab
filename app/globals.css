@@ -615,6 +615,73 @@ a {
   gap: 1rem;
 }
 
+.upload-panel {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid hsl(var(--border) / 0.72);
+  border-radius: 22px;
+  background: hsl(var(--card) / 0.46);
+  padding: 1rem;
+}
+
+.upload-panel p,
+.upload-panel strong {
+  margin: 0;
+}
+
+.upload-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 5.2rem;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 20px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+.upload-drop input {
+  display: none;
+}
+
+.upload-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.upload-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border) / 0.72);
+  border-radius: 18px;
+  background: hsl(var(--muted) / 0.36);
+}
+
+.upload-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.upload-preview button {
+  position: absolute;
+  right: 0.45rem;
+  top: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid hsl(var(--border) / 0.8);
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.82);
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
 .option-grid {
   display: grid;
   gap: 0.65rem;
@@ -998,6 +1065,10 @@ a {
 
   .duration-grid {
     grid-template-columns: 1fr;
+  }
+
+  .upload-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .task-row-metrics {

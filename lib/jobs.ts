@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { JobStatus, UserRole } from "@prisma/client";
 import { env } from "@/lib/env";
 import { ApiError, requestIpHash, requestUserAgent } from "@/lib/http";
@@ -6,9 +7,17 @@ import { quotaDate } from "@/lib/time";
 import { enqueuePendingJob } from "@/lib/queue";
 import { jobDurations } from "@/lib/duration";
 import { friendlyErrorMessage, statusLabel } from "@/lib/status-labels";
+import { deleteInputImages, parseStoredInputImages, saveInputImageFile, type StoredInputImage } from "@/lib/storage";
 
 const GLOBAL_QUEUE_LOCK = 10001;
 const USER_LOCK_BASE = 20000;
+const MAX_INPUT_IMAGES = 4;
+
+export type PendingInputImage = {
+  buffer: Buffer;
+  mime?: string;
+  name?: string;
+};
 
 export function imageUrls(job: { id: string; status: JobStatus; resultDeletedAt: Date | null }) {
   if (job.status !== JobStatus.COMPLETED || job.resultDeletedAt) {
@@ -25,78 +34,111 @@ export async function createImageJob(input: {
   prompt: string;
   size: string;
   quality: string;
+  inputImages?: PendingInputImage[];
 }) {
   if (input.user.isDisabled) throw new ApiError("USER_DISABLED", "账号已被禁用", 403);
+  if (input.inputImages && input.inputImages.length > MAX_INPUT_IMAGES) {
+    throw new ApiError("INVALID_INPUT", `最多上传 ${MAX_INPUT_IMAGES} 张参考图`);
+  }
 
   const currentQuotaDate = quotaDate();
   const ipHash = await requestIpHash();
   const userAgent = await requestUserAgent();
+  const jobId = crypto.randomUUID();
+  const storedInputImages: StoredInputImage[] = [];
 
-  const imageJob = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${GLOBAL_QUEUE_LOCK})`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE}::integer, hashtext(${input.user.id}))`;
+  try {
+    for (let index = 0; index < (input.inputImages?.length ?? 0); index += 1) {
+      const image = input.inputImages![index];
+      storedInputImages.push(
+        await saveInputImageFile({
+          jobId,
+          index,
+          buffer: image.buffer,
+          mime: image.mime,
+          name: image.name
+        })
+      );
+    }
+  } catch (error) {
+    await deleteInputImages(storedInputImages);
+    throw error;
+  }
 
-    const user = await tx.user.findUnique({ where: { id: input.user.id } });
-    if (!user) throw new ApiError("UNAUTHORIZED", "请先登录", 401);
-    if (user.isDisabled) throw new ApiError("USER_DISABLED", "账号已被禁用", 403);
+  let imageJob;
+  try {
+    imageJob = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${GLOBAL_QUEUE_LOCK})`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_LOCK_BASE}::integer, hashtext(${input.user.id}))`;
 
-    if (!(env.adminBypassDailyQuota && user.role === UserRole.ADMIN)) {
-      const usedToday = await tx.imageJob.count({
+      const user = await tx.user.findUnique({ where: { id: input.user.id } });
+      if (!user) throw new ApiError("UNAUTHORIZED", "请先登录", 401);
+      if (user.isDisabled) throw new ApiError("USER_DISABLED", "账号已被禁用", 403);
+
+      if (!(env.adminBypassDailyQuota && user.role === UserRole.ADMIN)) {
+        const usedToday = await tx.imageJob.count({
+          where: {
+            userId: user.id,
+            quotaDate: currentQuotaDate,
+            quotaCharged: true,
+            quotaRefundedAt: null
+          }
+        });
+        if (usedToday >= user.dailyQuota) {
+          throw new ApiError("DAILY_QUOTA_EXCEEDED", "今日生成额度已用完", 429);
+        }
+      }
+
+      if (user.role !== UserRole.ADMIN) {
+        const activeJobs = await tx.imageJob.count({
+          where: {
+            userId: user.id,
+            status: { in: [JobStatus.PENDING_ENQUEUE, JobStatus.QUEUED, JobStatus.RUNNING] }
+          }
+        });
+        if (activeJobs >= env.maxUserActiveJobs) {
+          throw new ApiError("USER_ACTIVE_JOB_LIMIT", "你已有任务正在排队或生成中", 429);
+        }
+      }
+
+      const queuedJobs = await tx.imageJob.count({
         where: {
+          status: { in: [JobStatus.PENDING_ENQUEUE, JobStatus.QUEUED] }
+        }
+      });
+      if (queuedJobs >= env.maxQueueLength) {
+        throw new ApiError("QUEUE_FULL", "当前排队人数较多，请稍后再试", 429);
+      }
+
+      const created = await tx.imageJob.create({
+        data: {
+          id: jobId,
           userId: user.id,
+          model: env.imageModel,
+          mode: storedInputImages.length ? "EDIT" : "GENERATE",
+          prompt: input.prompt,
+          size: input.size,
+          quality: input.quality,
+          outputFormat: env.defaultImageFormat,
+          inputImages: storedInputImages.length ? storedInputImages : undefined,
+          status: JobStatus.PENDING_ENQUEUE,
           quotaDate: currentQuotaDate,
-          quotaCharged: true,
-          quotaRefundedAt: null
+          requestIpHash: ipHash,
+          userAgent
         }
       });
-      if (usedToday >= user.dailyQuota) {
-        throw new ApiError("DAILY_QUOTA_EXCEEDED", "今日生成额度已用完", 429);
-      }
-    }
 
-    if (user.role !== UserRole.ADMIN) {
-      const activeJobs = await tx.imageJob.count({
-        where: {
-          userId: user.id,
-          status: { in: [JobStatus.PENDING_ENQUEUE, JobStatus.QUEUED, JobStatus.RUNNING] }
-        }
+      await tx.queueOutbox.create({ data: { imageJobId: created.id } });
+      await tx.usageLog.create({
+        data: { userId: user.id, imageJobId: created.id, action: "CREATE_JOB", status: "OK" }
       });
-      if (activeJobs >= env.maxUserActiveJobs) {
-        throw new ApiError("USER_ACTIVE_JOB_LIMIT", "你已有任务正在排队或生成中", 429);
-      }
-    }
 
-    const queuedJobs = await tx.imageJob.count({
-      where: {
-        status: { in: [JobStatus.PENDING_ENQUEUE, JobStatus.QUEUED] }
-      }
+      return created;
     });
-    if (queuedJobs >= env.maxQueueLength) {
-      throw new ApiError("QUEUE_FULL", "当前排队人数较多，请稍后再试", 429);
-    }
-
-    const created = await tx.imageJob.create({
-      data: {
-        userId: user.id,
-        model: env.imageModel,
-        prompt: input.prompt,
-        size: input.size,
-        quality: input.quality,
-        outputFormat: env.defaultImageFormat,
-        status: JobStatus.PENDING_ENQUEUE,
-        quotaDate: currentQuotaDate,
-        requestIpHash: ipHash,
-        userAgent
-      }
-    });
-
-    await tx.queueOutbox.create({ data: { imageJobId: created.id } });
-    await tx.usageLog.create({
-      data: { userId: user.id, imageJobId: created.id, action: "CREATE_JOB", status: "OK" }
-    });
-
-    return created;
-  });
+  } catch (error) {
+    await deleteInputImages(storedInputImages);
+    throw error;
+  }
 
   try {
     await enqueuePendingJob(imageJob.id);
@@ -135,6 +177,8 @@ export function publicJob(job: {
   id: string;
   prompt: string;
   model: string;
+  mode: string;
+  inputImages: unknown;
   status: JobStatus;
   size: string;
   quality: string;
@@ -153,6 +197,8 @@ export function publicJob(job: {
     id: job.id,
     prompt: job.prompt,
     model: job.model,
+    mode: job.mode,
+    inputImageCount: parseStoredInputImages(job.inputImages).length,
     status: job.status,
     statusLabel: statusLabel(job.status),
     size: job.size,

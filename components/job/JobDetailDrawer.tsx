@@ -34,7 +34,9 @@ export function JobDetailDrawer({
         <div className="grid">
           <JobStatusBadge job={job} />
           <p>{job.prompt}</p>
-          <p className="muted">{job.model} / {job.size} / {job.quality} / attempts {job.attempts}</p>
+          <p className="muted">
+            {job.model} / {job.mode === "EDIT" ? `图像编辑，参考图 ${job.inputImageCount} 张` : "文生图"} / {job.size} / {job.quality} / attempts {job.attempts}
+          </p>
           {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
           <JobTimeline job={job} />
 

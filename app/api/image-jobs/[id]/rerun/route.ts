@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 import { assertSameOrigin, jsonError, jsonOk, requestIpHash } from "@/lib/http";
 import { createImageJob, getAuthorizedJob, publicJob } from "@/lib/jobs";
 import { rateLimit } from "@/lib/rate-limit";
+import { parseStoredInputImages, readImageFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -18,11 +19,19 @@ export async function POST(request: Request, context: any) {
 
     const { id } = await context.params;
     const source = await getAuthorizedJob(id, user);
+    const inputImages = await Promise.all(
+      parseStoredInputImages(source.inputImages).map(async (image) => ({
+        buffer: await readImageFile(image.path),
+        mime: image.mime,
+        name: image.name
+      }))
+    );
     const job = await createImageJob({
       user,
       prompt: source.prompt,
       size: source.size,
-      quality: source.quality
+      quality: source.quality,
+      inputImages
     });
 
     return jsonOk({ ...publicJob(job), message: "已重新提交任务" }, 201);

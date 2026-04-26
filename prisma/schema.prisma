@@ -114,10 +114,12 @@ model ImageJob {
   userId String
 
   model        String
+  mode         String @default("GENERATE")
   prompt       String
   size         String
   quality      String
   outputFormat String
+  inputImages  Json?
 
   status     JobStatus @default(PENDING_ENQUEUE)
   queueJobId String?   @unique

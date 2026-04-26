@@ -236,7 +236,7 @@ export default function AdminClient() {
                 <JobStatusBadge job={job} />
                 <p>{job.prompt.slice(0, 180)}</p>
                 <p className="muted">
-                  {job.userEmail} / {job.errorCode ?? "no error"} / upstream {job.upstreamStatus ?? "-"} / 生成 {formatDuration(job.generationDurationMs)}
+                  {job.userEmail} / {job.mode === "EDIT" ? `编辑 ${job.inputImageCount} 图` : "文生图"} / {job.errorCode ?? "no error"} / upstream {job.upstreamStatus ?? "-"} / 生成 {formatDuration(job.generationDurationMs)}
                 </p>
                 {job.upstreamRequestId ? <p className="muted">request {job.upstreamRequestId}</p> : null}
               </div>

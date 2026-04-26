@@ -2,7 +2,7 @@ import { requireAdmin } from "@/lib/auth";
 import { verifyCsrf } from "@/lib/csrf";
 import { assertSameOrigin, jsonError, jsonOk } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { deleteImageFile } from "@/lib/storage";
+import { deleteImageFile, deleteInputImages } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,7 @@ export async function DELETE(request: Request, context: any) {
     if (!job) return jsonOk({ ok: true });
 
     await deleteImageFile(job.resultPath);
+    await deleteInputImages(job.inputImages);
     await prisma.imageJob.delete({ where: { id } });
     await prisma.usageLog.create({
       data: {
