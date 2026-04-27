@@ -7,8 +7,9 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { ImageGenerationPayload, enqueuePendingJob, ensureQueued } from "@/lib/queue";
-import { parseStoredInputImages, readImageFile, saveImageFile, saveThumbnailFile } from "@/lib/storage";
+import { optimizeInputImageForUpstream, parseStoredInputImages, readImageFile, saveImageFile, saveThumbnailFile } from "@/lib/storage";
 import { GenerationError, classifyUpstreamError } from "@/lib/upstream-errors";
+import { ApiError } from "@/lib/http";
 
 const workerId = `${os.hostname()}-${process.pid}-${randomUUID()}`;
 const heartbeatPrefix = "image-site:worker:";
@@ -61,6 +62,9 @@ async function claimJob(imageJobId: string) {
 
 function toGenerationError(error: unknown) {
   if (error instanceof GenerationError) return error;
+  if (error instanceof ApiError) {
+    return new GenerationError(error.code, error.message, false, undefined, null, true);
+  }
   if (error instanceof Error && error.name === "TimeoutError") {
     return new GenerationError("UPSTREAM_TIMEOUT", error.message, true, undefined, null, true);
   }
@@ -144,7 +148,9 @@ async function processImageJob(payload: ImageGenerationPayload) {
 
       for (const image of inputImages) {
         const buffer = await readImageFile(image.path);
-        formData.append("image[]", new Blob([new Uint8Array(buffer)], { type: image.mime }), image.name);
+        const optimized = await optimizeInputImageForUpstream(buffer, image.mime);
+        const baseName = image.name.replace(/\.[^.]+$/, "");
+        formData.append("image[]", new Blob([new Uint8Array(optimized.buffer)], { type: optimized.mime }), `${baseName}.${optimized.ext}`);
       }
 
       response = await fetch(`${env.sub2apiBaseUrl}/v1/images/edits`, {

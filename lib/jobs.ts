@@ -65,6 +65,10 @@ export async function createImageJob(input: {
         })
       );
     }
+    const totalInputBytes = storedInputImages.reduce((sum, image) => sum + image.bytes, 0);
+    if (totalInputBytes > env.upstreamInputImagesTotalMaxBytes) {
+      throw new ApiError("INVALID_INPUT", "参考图总大小过大，请减少图片数量或降低图片分辨率");
+    }
   } catch (error) {
     await deleteInputImages(storedInputImages);
     throw error;

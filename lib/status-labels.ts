@@ -50,6 +50,7 @@ const errorCodeLabels: Record<string, string> = {
   CONTENT_POLICY: "内容规则拦截",
   INVALID_REQUEST: "参数被拒绝",
   INVALID_UPSTREAM_RESPONSE: "上游响应异常",
+  UPSTREAM_PAYLOAD_TOO_LARGE: "参考图过大",
   QUEUE_ENQUEUE_FAILED: "入队失败",
   WORKER_STALE: "工作进程中断"
 };
@@ -95,6 +96,7 @@ export function friendlyErrorMessage(code?: string | null, fallback?: string | n
     AUTH_FAILED: "图片服务密钥无效，请联系管理员。",
     CONTENT_POLICY: "提示词可能违反内容规则，请修改后重试。",
     INVALID_REQUEST: "生成参数或提示词被上游拒绝，请调整后再试。",
+    UPSTREAM_PAYLOAD_TOO_LARGE: "参考图请求体过大，额度已退还。请减少图片数量或降低图片分辨率后重试。",
     INVALID_UPSTREAM_RESPONSE: "图片服务返回格式异常，请联系管理员。",
     QUEUE_ENQUEUE_FAILED: "任务入队失败，额度已退还，请稍后重试。",
     WORKER_STALE: "生成工作进程中断，任务已失败或重新入队。"

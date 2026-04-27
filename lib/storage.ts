@@ -10,6 +10,8 @@ const WEBP_RIFF = Buffer.from("RIFF");
 const WEBP_WEBP = Buffer.from("WEBP");
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const MAX_INPUT_IMAGE_BYTES = 20 * 1024 * 1024;
+const MIN_UPSTREAM_INPUT_IMAGE_EDGE = 640;
+const MIN_UPSTREAM_INPUT_IMAGE_QUALITY = 52;
 
 export type StoredInputImage = {
   path: string;
@@ -76,6 +78,46 @@ function detectInputImage(buffer: Buffer, mime?: string) {
   throw new ApiError("INVALID_INPUT", "仅支持常见图片格式上传");
 }
 
+async function encodeInputAsJpeg(buffer: Buffer, edge: number, quality: number) {
+  return sharp(buffer, { failOn: "none" })
+    .rotate()
+    .resize({ width: edge, height: edge, fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#fff" })
+    .jpeg({ quality, mozjpeg: true })
+    .toBuffer();
+}
+
+export async function optimizeInputImageForUpstream(buffer: Buffer, mime?: string) {
+  const detected = detectInputImage(buffer, mime);
+  const maxBytes = Math.max(256_000, env.upstreamInputImageMaxBytes);
+  const maxEdge = Math.max(MIN_UPSTREAM_INPUT_IMAGE_EDGE, env.upstreamInputImageMaxEdge);
+  const initialQuality = Math.min(92, Math.max(MIN_UPSTREAM_INPUT_IMAGE_QUALITY, env.upstreamInputImageQuality));
+  const metadata = await sharp(buffer, { failOn: "none" }).metadata();
+  const maxDimension = Math.max(metadata.width ?? 0, metadata.height ?? 0);
+
+  if (buffer.length <= maxBytes && (!maxDimension || maxDimension <= maxEdge)) {
+    return { buffer, mime: detected.mime, ext: detected.ext };
+  }
+
+  const startingEdge = Math.max(MIN_UPSTREAM_INPUT_IMAGE_EDGE, Math.min(maxDimension || maxEdge, maxEdge));
+  const edgeAttempts = Array.from(
+    new Set([startingEdge, 1280, 1024, 768, MIN_UPSTREAM_INPUT_IMAGE_EDGE].filter((edge) => edge <= startingEdge && edge >= MIN_UPSTREAM_INPUT_IMAGE_EDGE))
+  );
+  let best: Buffer | null = null;
+
+  for (const edge of edgeAttempts) {
+    for (let quality = initialQuality; quality >= MIN_UPSTREAM_INPUT_IMAGE_QUALITY; quality -= 8) {
+      const optimized = await encodeInputAsJpeg(buffer, edge, quality);
+      if (!best || optimized.length < best.length) best = optimized;
+      if (optimized.length <= maxBytes) {
+        return { buffer: optimized, mime: "image/jpeg", ext: "jpg" };
+      }
+    }
+  }
+
+  throw new ApiError("INVALID_INPUT", "参考图压缩后仍过大，请减少图片数量或降低图片分辨率");
+}
+
 export function assertSafeStoragePath(filePath: string) {
   const root = path.resolve(env.imageStorageDir);
   const resolved = path.resolve(filePath);
@@ -133,23 +175,23 @@ export async function saveInputImageFile(input: {
   mime?: string;
   name?: string;
 }) {
-  const detected = detectInputImage(input.buffer, input.mime);
+  const optimized = await optimizeInputImageForUpstream(input.buffer, input.mime);
   const date = new Date().toISOString().slice(0, 10);
   const dir = path.join(env.imageStorageDir, date, input.jobId, "input");
   await fs.mkdir(dir, { recursive: true });
 
   const baseName = input.name ? path.parse(input.name).name : `input-${input.index}`;
   const safeName = baseName.replace(/[^\w.-]+/g, "_").slice(0, 80) || `input-${input.index}`;
-  const finalPath = path.join(dir, `${input.index}-${safeName}.${detected.ext}`);
+  const finalPath = path.join(dir, `${input.index}-${safeName}.${optimized.ext}`);
   const tmpPath = `${finalPath}.${process.pid}.tmp`;
-  await fs.writeFile(tmpPath, input.buffer, { flag: "wx" });
+  await fs.writeFile(tmpPath, optimized.buffer, { flag: "wx" });
   await fs.rename(tmpPath, finalPath);
 
   return {
     path: finalPath,
-    mime: detected.mime,
-    name: safeName,
-    bytes: input.buffer.length
+    mime: optimized.mime,
+    name: `${safeName}.${optimized.ext}`,
+    bytes: optimized.buffer.length
   } satisfies StoredInputImage;
 }
 

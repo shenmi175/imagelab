@@ -20,7 +20,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
     <div className="shell public-shell">
       <header className="public-nav">
         <Link href="/login" className="brand">
-          image.perceptleap.com
+          imagelab.perceptleap.com
         </Link>
         <div className="nav-actions">
           <ThemeToggle />

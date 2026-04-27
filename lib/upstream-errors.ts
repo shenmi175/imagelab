@@ -19,6 +19,9 @@ export function classifyUpstreamError(status: number, body: string, requestId: s
   if (status === 400) {
     return new GenerationError("INVALID_REQUEST", `Sub2API rejected request: ${snippet}`, false, status, requestId);
   }
+  if (status === 413) {
+    return new GenerationError("UPSTREAM_PAYLOAD_TOO_LARGE", "参考图请求体过大，请减少图片数量或降低图片分辨率", false, status, requestId, true);
+  }
   if (status === 429) {
     return new GenerationError("UPSTREAM_429", `Sub2API rate limited: ${snippet}`, true, status, requestId, true);
   }
