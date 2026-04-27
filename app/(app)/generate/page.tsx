@@ -19,6 +19,8 @@ const promptTemplates = [
   "未来城市夜景概念图，雨后街道、霓虹倒影、无人驾驶巴士、干净但具有电影感的环境设计。"
 ];
 
+const maxInputImages = 4;
+
 const sizes = [
   { value: "1024x1024", label: "方图", description: "社媒封面 / 通用预览" },
   { value: "1536x1024", label: "横图", description: "海报 / 横幅 / 桌面图" },
@@ -51,6 +53,10 @@ const moderations = [
   { value: "auto", label: "自动", description: "默认" },
   { value: "low", label: "宽松", description: "较宽松" }
 ];
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
 
 function useJob(jobId: string | null) {
   return useQuery({
@@ -128,8 +134,27 @@ export default function GeneratePage() {
   }
 
   function selectImages(files: FileList | null) {
-    const next = Array.from(files ?? []).slice(0, 4);
-    setInputImages(next);
+    const selected = Array.from(files ?? []);
+    if (!selected.length) return;
+
+    setInputImages((current) => {
+      const existing = new Set(current.map(fileKey));
+      const next = [...current];
+
+      for (const file of selected) {
+        const key = fileKey(file);
+        if (existing.has(key)) continue;
+        if (next.length >= maxInputImages) break;
+        existing.add(key);
+        next.push(file);
+      }
+
+      return next;
+    });
+
+    if (inputImages.length + selected.length > maxInputImages) {
+      toast.warning(`最多上传 ${maxInputImages} 张参考图`);
+    }
   }
 
   const selectedSize = sizes.find((item) => item.value === size);
@@ -174,7 +199,10 @@ export default function GeneratePage() {
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   multiple
-                  onChange={(event) => selectImages(event.target.files)}
+                  onChange={(event) => {
+                    selectImages(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
                 />
               </label>
 
@@ -351,7 +379,10 @@ export default function GeneratePage() {
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
                     multiple
-                    onChange={(event) => selectImages(event.target.files)}
+                    onChange={(event) => {
+                      selectImages(event.target.files);
+                      event.currentTarget.value = "";
+                    }}
                   />
                 </label>
                 {previewUrls.length ? (
