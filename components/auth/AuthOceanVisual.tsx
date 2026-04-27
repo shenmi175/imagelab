@@ -11,15 +11,11 @@ const waveLayers = [
 export function AuthOceanVisual({
   eyebrow,
   title,
-  description,
-  meta,
-  metaLabel = "队列优先"
+  description
 }: {
   eyebrow: string;
   title: ReactNode;
   description?: string;
-  meta: string;
-  metaLabel?: string;
 }) {
   return (
     <section className="auth-visual card">
@@ -27,11 +23,6 @@ export function AuthOceanVisual({
         <p className="auth-eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}
-      </div>
-
-      <div className="auth-visual-meta">
-        <span>{metaLabel}</span>
-        <strong>{meta}</strong>
       </div>
 
       <div className="ocean-stage" aria-hidden="true">
