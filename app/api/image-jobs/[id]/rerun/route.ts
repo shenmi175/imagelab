@@ -31,6 +31,10 @@ export async function POST(request: Request, context: any) {
       prompt: source.prompt,
       size: source.size,
       quality: source.quality,
+      outputFormat: source.outputFormat,
+      outputCompression: source.outputCompression,
+      background: source.background,
+      moderation: source.moderation,
       inputImages
     });
 

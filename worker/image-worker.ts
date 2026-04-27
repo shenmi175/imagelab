@@ -11,6 +11,20 @@ import { parseStoredInputImages, readImageFile, saveImageFile, saveThumbnailFile
 import { GenerationError, classifyUpstreamError } from "@/lib/upstream-errors";
 
 const workerId = `${os.hostname()}-${process.pid}-${randomUUID()}`;
+const heartbeatPrefix = "image-site:worker:";
+const heartbeatSuffix = ":heartbeat";
+
+let shuttingDown = false;
+let keepHeartbeat = true;
+
+function heartbeatKey(id: string) {
+  return `${heartbeatPrefix}${id}${heartbeatSuffix}`;
+}
+
+function workerIdFromHeartbeatKey(key: string) {
+  if (!key.startsWith(heartbeatPrefix) || !key.endsWith(heartbeatSuffix)) return null;
+  return key.slice(heartbeatPrefix.length, -heartbeatSuffix.length);
+}
 
 function datePlusSeconds(seconds: number) {
   return new Date(Date.now() + seconds * 1000);
@@ -18,6 +32,13 @@ function datePlusSeconds(seconds: number) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function scheduleEnsureQueued(imageJobId: string) {
+  const timer = setTimeout(() => {
+    void ensureQueued(imageJobId).catch((error) => console.warn("Failed to schedule queued job", imageJobId, error));
+  }, 1000);
+  timer.unref();
 }
 
 async function claimJob(imageJobId: string) {
@@ -49,6 +70,19 @@ function toGenerationError(error: unknown) {
   return new GenerationError("GENERATION_FAILED", String(error), false);
 }
 
+function imageRequestOptions(job: NonNullable<Awaited<ReturnType<typeof claimJob>>>) {
+  return {
+    model: job.model,
+    prompt: job.prompt,
+    size: job.size,
+    quality: job.quality,
+    output_format: job.outputFormat,
+    ...(job.outputFormat === "jpeg" && job.outputCompression !== null ? { output_compression: job.outputCompression } : {}),
+    background: job.background,
+    moderation: job.moderation
+  };
+}
+
 async function handleJobFailure(job: NonNullable<Awaited<ReturnType<typeof claimJob>>>, error: unknown) {
   const generationError = toGenerationError(error);
   const canRetry = generationError.retryable && job.attempts < env.maxJobAttempts;
@@ -68,6 +102,7 @@ async function handleJobFailure(job: NonNullable<Awaited<ReturnType<typeof claim
         lockExpiresAt: null
       }
     });
+    scheduleEnsureQueued(job.id);
     return;
   }
 
@@ -80,7 +115,7 @@ async function handleJobFailure(job: NonNullable<Awaited<ReturnType<typeof claim
       upstreamStatus: generationError.upstreamStatus,
       upstreamRequestId: generationError.upstreamRequestId ?? undefined,
       completedAt: now,
-      quotaRefundedAt: generationError.refundQuota ? now : undefined,
+      quotaRefundedAt: now,
       workerId: null,
       lockedAt: null,
       lockExpiresAt: null
@@ -101,12 +136,11 @@ async function processImageJob(payload: ImageGenerationPayload) {
     let response: Response;
 
     if (inputImages.length) {
+      const options = imageRequestOptions(job);
       const formData = new FormData();
-      formData.set("model", job.model);
-      formData.set("prompt", job.prompt);
-      formData.set("size", job.size);
-      formData.set("quality", job.quality);
-      formData.set("output_format", job.outputFormat);
+      for (const [key, value] of Object.entries(options)) {
+        formData.set(key, String(value));
+      }
 
       for (const image of inputImages) {
         const buffer = await readImageFile(image.path);
@@ -128,13 +162,7 @@ async function processImageJob(payload: ImageGenerationPayload) {
           Authorization: `Bearer ${env.sub2apiApiKey}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          model: job.model,
-          prompt: job.prompt,
-          size: job.size,
-          quality: job.quality,
-          output_format: job.outputFormat
-        }),
+        body: JSON.stringify(imageRequestOptions(job)),
         signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
       });
     }
@@ -153,7 +181,7 @@ async function processImageJob(payload: ImageGenerationPayload) {
     }
 
     const buffer = Buffer.from(b64, "base64");
-    const filePath = await saveImageFile(job.id, buffer, job.outputFormat);
+    const savedImage = await saveImageFile(job.id, buffer);
     const thumbnail = await saveThumbnailFile(job.id, buffer).catch((error) => {
       console.warn("Failed to create thumbnail for job", job.id, error);
       return null;
@@ -164,8 +192,8 @@ async function processImageJob(payload: ImageGenerationPayload) {
       where: { id: job.id, status: JobStatus.RUNNING, workerId },
       data: {
         status: JobStatus.COMPLETED,
-        resultPath: filePath,
-        resultMime: "image/png",
+        resultPath: savedImage.path,
+        resultMime: savedImage.mime,
         resultBytes: buffer.length,
         thumbnailPath: thumbnail?.path,
         thumbnailMime: thumbnail?.mime,
@@ -228,6 +256,9 @@ async function dispatchOutboxOnce() {
 }
 
 async function reconcileOnce() {
+  const now = new Date();
+  const redis = getRedis();
+
   const missingOutbox = await prisma.imageJob.findMany({
     where: { status: JobStatus.PENDING_ENQUEUE, outbox: null },
     take: 50
@@ -244,40 +275,52 @@ async function reconcileOnce() {
     await ensureQueued(job.id).catch((error) => console.warn("Failed to ensure queued job", job.id, error));
   }
 
-  const staleRunning = await prisma.imageJob.findMany({
+  const heartbeatKeys = await redis.keys(`${heartbeatPrefix}*${heartbeatSuffix}`).catch(() => []);
+  const activeWorkerIds = new Set(heartbeatKeys.map(workerIdFromHeartbeatKey).filter((id): id is string => Boolean(id)));
+  const orphanedCutoff = new Date(Date.now() - env.workerOrphanedRunningGraceSeconds * 1000);
+  const staleCutoff = new Date(Date.now() - env.runningJobStaleSeconds * 1000);
+  const runningCandidates = await prisma.imageJob.findMany({
     where: {
       status: JobStatus.RUNNING,
-      lockExpiresAt: { lt: new Date(Date.now() - env.runningJobStaleSeconds * 1000) }
+      OR: [
+        { workerId: null },
+        { lockedAt: { lt: orphanedCutoff } },
+        { lockExpiresAt: { lt: staleCutoff } }
+      ]
     },
     take: 50
   });
+  const staleRunning = runningCandidates.filter((job) => !job.workerId || !activeWorkerIds.has(job.workerId));
 
   for (const job of staleRunning) {
     if (job.attempts < env.maxJobAttempts) {
-      await prisma.imageJob.update({
-        where: { id: job.id },
+      const updated = await prisma.imageJob.updateMany({
+        where: { id: job.id, status: JobStatus.RUNNING },
         data: {
           status: JobStatus.QUEUED,
           workerId: null,
           lockedAt: null,
           lockExpiresAt: null,
+          queuedAt: now,
           errorCode: "WORKER_STALE",
           errorMessage: "Worker stopped before finishing the job"
         }
       });
-      await ensureQueued(job.id).catch((error) => console.warn("Failed to requeue stale job", job.id, error));
+      if (updated.count === 1) {
+        await ensureQueued(job.id).catch((error) => console.warn("Failed to requeue stale job", job.id, error));
+      }
     } else {
-      await prisma.imageJob.update({
-        where: { id: job.id },
+      await prisma.imageJob.updateMany({
+        where: { id: job.id, status: JobStatus.RUNNING },
         data: {
           status: JobStatus.FAILED,
           workerId: null,
           lockedAt: null,
           lockExpiresAt: null,
-          completedAt: new Date(),
+          completedAt: now,
           errorCode: "WORKER_STALE",
           errorMessage: "Worker stopped and retry limit was reached",
-          quotaRefundedAt: new Date()
+          quotaRefundedAt: now
         }
       });
     }
@@ -286,14 +329,14 @@ async function reconcileOnce() {
 
 async function heartbeatLoop() {
   const redis = getRedis();
-  while (true) {
-    await redis.set(`image-site:worker:${workerId}:heartbeat`, new Date().toISOString(), "EX", 90).catch(() => undefined);
-    await sleep(30_000);
+  while (keepHeartbeat) {
+    await redis.set(heartbeatKey(workerId), new Date().toISOString(), "EX", env.workerHeartbeatTtlSeconds).catch(() => undefined);
+    await sleep(env.workerHeartbeatIntervalSeconds * 1000);
   }
 }
 
 async function intervalLoop(name: string, seconds: number, fn: () => Promise<void>) {
-  while (true) {
+  while (!shuttingDown) {
     try {
       await fn();
     } catch (error) {
@@ -305,11 +348,39 @@ async function intervalLoop(name: string, seconds: number, fn: () => Promise<voi
 
 console.log(`Starting image worker ${workerId} with concurrency ${env.maxGlobalConcurrency}`);
 
-new Worker<ImageGenerationPayload>(env.queueName, async (job) => processImageJob(job.data), {
+const worker = new Worker<ImageGenerationPayload>(env.queueName, async (job) => processImageJob(job.data), {
   connection: getRedis(),
   concurrency: env.maxGlobalConcurrency
 });
 
+async function gracefulShutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}; waiting for active image jobs to finish before shutdown.`);
+
+  try {
+    await worker.close(false);
+  } catch (error) {
+    console.error("Failed to close worker gracefully", error);
+    process.exitCode = 1;
+  } finally {
+    keepHeartbeat = false;
+    await getRedis().del(heartbeatKey(workerId)).catch(() => undefined);
+    await prisma.$disconnect().catch(() => undefined);
+    console.log("Image worker shutdown complete.");
+    process.exit(process.exitCode ?? 0);
+  }
+}
+
+process.once("SIGTERM", (signal) => void gracefulShutdown(signal));
+process.once("SIGINT", (signal) => void gracefulShutdown(signal));
+
+worker.on("error", (error) => {
+  console.error("Image worker error", error);
+});
+
+void dispatchOutboxOnce().catch((error) => console.error("initial outbox dispatch failed", error));
+void reconcileOnce().catch((error) => console.error("initial reconcile failed", error));
 void heartbeatLoop();
 void intervalLoop("outbox dispatcher", env.outboxDispatchIntervalSeconds, dispatchOutboxOnce);
 void intervalLoop("reconciler", env.reconcileIntervalSeconds, reconcileOnce);

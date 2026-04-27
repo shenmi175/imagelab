@@ -34,11 +34,11 @@ export async function verifyCsrf(request: Request) {
   const token = request.headers.get("x-csrf-token");
 
   if (!token || !signed || !verifySigned(signed)) {
-    throw new ApiError("CSRF_FAILED", "CSRF 校验失败", 403);
+    throw new ApiError("CSRF_FAILED", "安全校验失败", 403);
   }
 
   const [cookieToken] = signed.split(".");
   if (!timingSafeEqual(token, cookieToken)) {
-    throw new ApiError("CSRF_FAILED", "CSRF 校验失败", 403);
+    throw new ApiError("CSRF_FAILED", "安全校验失败", 403);
   }
 }

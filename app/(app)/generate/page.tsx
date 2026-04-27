@@ -4,14 +4,14 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRight, Copy, ImagePlus, RotateCcw, Sparkles, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Copy, ImagePlus, RotateCcw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
 import { StorageNotice } from "@/components/app/StorageNotice";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { JobTimeline } from "@/components/job/JobTimeline";
 import { JobTimer } from "@/components/job/JobTimer";
-import { terminalStatuses } from "@/lib/status-labels";
+import { jobModeLabel, outputFormatLabel, qualityLabel, terminalStatuses } from "@/lib/status-labels";
 
 const promptTemplates = [
   "制作一张关于濒危动物的视觉信息丰富的信息图，中心是一只近乎照片写实的雪豹，周围有栖息地、食性、威胁和保护行动标注。",
@@ -21,14 +21,35 @@ const promptTemplates = [
 
 const sizes = [
   { value: "1024x1024", label: "方图", description: "社媒封面 / 通用预览" },
-  { value: "1536x1024", label: "横图", description: "海报 / Banner / 桌面图" },
-  { value: "1024x1536", label: "竖图", description: "手机壁纸 / 小红书图文" }
+  { value: "1536x1024", label: "横图", description: "海报 / 横幅 / 桌面图" },
+  { value: "1024x1536", label: "竖图", description: "手机壁纸 / 小红书图文" },
+  { value: "2048x2048", label: "高清方图", description: "细节更足的方形图" },
+  { value: "2048x1152", label: "高清横图", description: "宽屏封面 / 展示图" },
+  { value: "3840x2160", label: "超清横图", description: "大屏展示 / 细节输出" },
+  { value: "2160x3840", label: "超清竖图", description: "竖版海报 / 手机壁纸" },
+  { value: "auto", label: "自动", description: "由模型自动选择尺寸" }
 ];
 
 const qualities = [
-  { value: "low", label: "Low", description: "更快，适合草稿" },
-  { value: "medium", label: "Medium", description: "平衡速度和质量" },
-  { value: "high", label: "High", description: "更细节，通常更慢" }
+  { value: "low", label: "草稿", description: "更快，适合草稿" },
+  { value: "medium", label: "标准", description: "平衡速度和质量" },
+  { value: "high", label: "精细", description: "更细节，通常更慢" },
+  { value: "auto", label: "自动", description: "由模型自动决定" }
+];
+
+const outputFormats = [
+  { value: "png", label: "无损图", description: "适合通用下载" },
+  { value: "jpeg", label: "压缩图", description: "文件更小" }
+];
+
+const backgrounds = [
+  { value: "auto", label: "自动", description: "自动" },
+  { value: "opaque", label: "不透明", description: "不透明" }
+];
+
+const moderations = [
+  { value: "auto", label: "自动", description: "默认" },
+  { value: "low", label: "宽松", description: "较宽松" }
 ];
 
 function useJob(jobId: string | null) {
@@ -50,6 +71,10 @@ export default function GeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("high");
+  const [outputFormat, setOutputFormat] = useState("png");
+  const [outputCompression, setOutputCompression] = useState(75);
+  const [background, setBackground] = useState("auto");
+  const [moderation, setModeration] = useState("auto");
   const [inputImages, setInputImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -73,6 +98,10 @@ export default function GeneratePage() {
       formData.set("prompt", prompt);
       formData.set("size", size);
       formData.set("quality", quality);
+      formData.set("output_format", outputFormat);
+      if (outputFormat === "jpeg") formData.set("output_compression", String(outputCompression));
+      formData.set("background", background);
+      formData.set("moderation", moderation);
       inputImages.forEach((file) => formData.append("image[]", file));
       return apiFetch<PublicJob>("/api/image-jobs", {
         method: "POST",
@@ -92,7 +121,7 @@ export default function GeneratePage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!prompt.trim()) {
-      toast.error("Prompt 不能为空");
+      toast.error("提示词不能为空");
       return;
     }
     createMutation.mutate();
@@ -103,10 +132,13 @@ export default function GeneratePage() {
     setInputImages(next);
   }
 
+  const selectedSize = sizes.find((item) => item.value === size);
+  const selectedQuality = qualities.find((item) => item.value === quality);
+  const selectedFormat = outputFormats.find((item) => item.value === outputFormat);
+
   return (
     <main className="generate-workspace">
       <aside className="template-rail card">
-        <p className="muted">Prompt templates</p>
         <h2>快速开始</h2>
         <div className="template-list">
           {promptTemplates.map((template) => (
@@ -120,7 +152,6 @@ export default function GeneratePage() {
       <section className="creator-panel card">
         <div className="section-heading">
           <div>
-            <p className="muted">Create</p>
             <h1>描述你要生成的图片</h1>
           </div>
           <Button type="button" variant="ghost" onClick={() => setPrompt("")}>清空</Button>
@@ -128,94 +159,235 @@ export default function GeneratePage() {
 
         <form className="grid" onSubmit={submit}>
           <StorageNotice />
-          <label className="prompt-editor">
+          <div className="prompt-editor">
             <textarea
               className="textarea"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="例如：大胆图形插画风格的信息图，主体近乎照片写实，周围有结构化标注..."
             />
-            <span className={prompt.length > 1800 ? "char-count warning" : "char-count"}>{prompt.length} / 2000</span>
-          </label>
+            <div className="prompt-toolbar" aria-label="生成参数">
+              <label className="prompt-upload">
+                <ImagePlus className="h-4 w-4" />
+                <span>{inputImages.length ? `${inputImages.length} 图` : "参考图"}</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  onChange={(event) => selectImages(event.target.files)}
+                />
+              </label>
 
-          <div className="parameter-grid">
-            <div className="parameter-group">
-              <p className="muted">尺寸</p>
-              <div className="option-grid">
-                {sizes.map((item) => (
-                  <button type="button" className={size === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setSize(item.value)}>
-                    <strong>{item.label}</strong>
-                    <span>{item.value}</span>
-                    <small>{item.description}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="parameter-group">
-              <p className="muted">质量</p>
-              <div className="option-grid">
-                {qualities.map((item) => (
-                  <button type="button" className={quality === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setQuality(item.value)}>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </button>
-                ))}
-              </div>
+              <label className="inline-field">
+                <span>分辨率</span>
+                <select value={size} onChange={(event) => setSize(event.target.value)}>
+                  {sizes.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label} {item.value}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="inline-field">
+                <span>质量</span>
+                <select value={quality} onChange={(event) => setQuality(event.target.value)}>
+                  {qualities.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="inline-field">
+                <span>审核</span>
+                <select value={moderation} onChange={(event) => setModeration(event.target.value)}>
+                  {moderations.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="inline-field">
+                <span>格式</span>
+                <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
+                  {outputFormats.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="inline-field">
+                <span>背景</span>
+                <select value={background} onChange={(event) => setBackground(event.target.value)}>
+                  {backgrounds.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+              <span className={prompt.length > 1800 ? "char-count warning" : "char-count"}>{prompt.length} / 2000</span>
+              <Button className="prompt-submit" type="submit" disabled={createMutation.isPending || !prompt.trim() || prompt.length > 2000}>
+                <Sparkles className="h-4 w-4" />
+                {createMutation.isPending ? "提交中..." : inputImages.length ? "提交编辑" : "提交生成"}
+              </Button>
             </div>
           </div>
 
-          <div className="upload-panel">
-            <div>
-              <p className="muted">参考图 / 编辑图</p>
-              <strong>{inputImages.length ? `已选择 ${inputImages.length} 张图片` : "可选上传，上传后自动走图像编辑接口"}</strong>
-            </div>
-            <label className="upload-drop">
-              <ImagePlus className="h-5 w-5" />
-              <span>选择 PNG / JPG / WEBP，最多 4 张</span>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                onChange={(event) => selectImages(event.target.files)}
-              />
-            </label>
-            {previewUrls.length ? (
-              <div className="upload-preview-grid">
-                {previewUrls.map((url, index) => (
-                  <div className="upload-preview" key={url}>
-                    <img src={url} alt={`参考图 ${index + 1}`} decoding="async" />
-                    <button
-                      type="button"
-                      aria-label="移除图片"
-                      onClick={() => setInputImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+          <details className="parameter-accordion">
+            <summary>
+              <span>
+                <SlidersHorizontal className="h-4 w-4" />
+                完整参数
+              </span>
+              <small>
+                {selectedSize?.label ?? size} / {selectedQuality?.label ?? quality} / {selectedFormat?.label ?? outputFormat}
+              </small>
+              <ChevronDown className="accordion-icon h-4 w-4" />
+            </summary>
+
+            <div className="parameter-accordion-body">
+              <div className="parameter-grid">
+                <div className="parameter-group wide">
+                  <p className="muted">尺寸</p>
+                  <div className="option-grid size-option-grid">
+                    {sizes.map((item) => (
+                      <button type="button" className={size === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setSize(item.value)}>
+                        <strong>{item.label}</strong>
+                        <span>{item.value}</span>
+                        <small>{item.description}</small>
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <div className="parameter-group wide">
+                  <p className="muted">质量</p>
+                  <div className="option-grid">
+                    {qualities.map((item) => (
+                      <button type="button" className={quality === item.value ? "option-card active" : "option-card"} key={item.value} onClick={() => setQuality(item.value)}>
+                        <strong>{item.label}</strong>
+                        <small>{item.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            ) : null}
-          </div>
 
-          <div className="action-row">
-            <Button type="submit" size="lg" disabled={createMutation.isPending || !prompt.trim() || prompt.length > 2000}>
-              <Sparkles className="h-4 w-4" />
-              {createMutation.isPending ? "提交中..." : inputImages.length ? "提交编辑任务" : "提交生成"}
-            </Button>
-            {activeJob ? (
+              <div className="advanced-parameters">
+                <div className="section-heading compact">
+                  <div>
+                    <h2>输出参数</h2>
+                  </div>
+                  <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                </div>
+
+                <div className="parameter-grid compact">
+                  <div className="parameter-group">
+                    <p className="muted">格式</p>
+                    <div className="option-grid compact">
+                      {outputFormats.map((item) => (
+                        <button type="button" className={outputFormat === item.value ? "option-card compact active" : "option-card compact"} key={item.value} onClick={() => setOutputFormat(item.value)}>
+                          <strong>{item.label}</strong>
+                          <small>{item.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={outputFormat === "jpeg" ? "parameter-group" : "parameter-group disabled"}>
+                    <p className="muted">压缩率</p>
+                    <div className="range-control">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={outputCompression}
+                        disabled={outputFormat !== "jpeg"}
+                        onChange={(event) => setOutputCompression(Number(event.target.value))}
+                      />
+                      <input
+                        className="number-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={outputCompression}
+                        disabled={outputFormat !== "jpeg"}
+                        onChange={(event) => setOutputCompression(Math.min(100, Math.max(0, Number(event.target.value) || 0)))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="parameter-group">
+                    <p className="muted">背景</p>
+                    <div className="option-grid compact">
+                      {backgrounds.map((item) => (
+                        <button type="button" className={background === item.value ? "option-card compact active" : "option-card compact"} key={item.value} onClick={() => setBackground(item.value)}>
+                          <strong>{item.label}</strong>
+                          <small>{item.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="parameter-group">
+                    <p className="muted">审核</p>
+                    <div className="option-grid compact">
+                      {moderations.map((item) => (
+                        <button type="button" className={moderation === item.value ? "option-card compact active" : "option-card compact"} key={item.value} onClick={() => setModeration(item.value)}>
+                          <strong>{item.label}</strong>
+                          <small>{item.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="upload-panel">
+                <div>
+                  <p className="muted">参考图 / 编辑图</p>
+                  <strong>{inputImages.length ? `已选择 ${inputImages.length} 张图片` : "可选上传，上传后自动走图像编辑接口"}</strong>
+                </div>
+                <label className="upload-drop">
+                  <ImagePlus className="h-5 w-5" />
+                  <span>选择常见图片格式，最多 4 张</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    multiple
+                    onChange={(event) => selectImages(event.target.files)}
+                  />
+                </label>
+                {previewUrls.length ? (
+                  <div className="upload-preview-grid">
+                    {previewUrls.map((url, index) => (
+                      <div className="upload-preview" key={url}>
+                        <img src={url} alt={`参考图 ${index + 1}`} decoding="async" />
+                        <button
+                          type="button"
+                          aria-label="移除图片"
+                          onClick={() => setInputImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </details>
+
+          {activeJob ? (
+            <div className="action-row">
               <Link className="button secondary" href={`/jobs/${activeJob.id}`}>
                 打开详情
                 <ArrowRight className="h-4 w-4" />
               </Link>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </form>
       </section>
 
       <aside className="status-panel card">
         <div className="section-heading">
           <div>
-            <p className="muted">Current job</p>
             <h2>生成状态</h2>
           </div>
           {activeJob ? <JobStatusBadge job={activeJob} /> : null}
@@ -224,7 +396,8 @@ export default function GeneratePage() {
         {activeJob ? (
           <div className="grid">
             <JobTimer job={activeJob} />
-            <p className="muted">{activeJob.mode === "EDIT" ? `图像编辑任务 / 参考图 ${activeJob.inputImageCount} 张` : "文生图任务"}</p>
+            <p className="muted">任务类型：{jobModeLabel(activeJob.mode, activeJob.inputImageCount)}</p>
+            <p className="muted">{activeJob.size} / {qualityLabel(activeJob.quality)} / {outputFormatLabel(activeJob.outputFormat)}{activeJob.outputCompression !== null && activeJob.outputCompression !== undefined ? ` / 压缩 ${activeJob.outputCompression}` : ""}</p>
             <p className="muted">图片生成通常需要几十秒到数分钟，页面会自动刷新状态。</p>
             <StorageNotice compact />
             {activeJob.displayError ? <p className="error-text">{activeJob.displayError}</p> : null}
@@ -241,7 +414,7 @@ export default function GeneratePage() {
               {activeJob.downloadUrl ? <a className="button" href={activeJob.downloadUrl}>下载图片</a> : null}
               <Button type="button" variant="secondary" onClick={() => navigator.clipboard.writeText(activeJob.prompt)}>
                 <Copy className="h-4 w-4" />
-                复制 Prompt
+                复制提示词
               </Button>
             </div>
           </div>

@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | "JOB_NOT_FOUND"
   | "IMAGE_NOT_READY"
   | "IMAGE_EXPIRED"
+  | "FEEDBACK_NOT_FOUND"
   | "GENERATION_FAILED"
   | "SUB2API_UNAVAILABLE";
 

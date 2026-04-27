@@ -5,6 +5,7 @@ import { apiFetch } from "@/components/api";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { formatDuration } from "@/lib/duration";
+import { errorCodeLabel, jobModeLabel, outputFormatLabel, qualityLabel } from "@/lib/status-labels";
 import type { AdminJob } from "@/components/admin/AdminTypes";
 
 export function AdminJobList({
@@ -43,12 +44,12 @@ export function AdminJobList({
             <JobStatusBadge job={job} />
             <p>{job.prompt.slice(0, 180)}</p>
             <p className="muted">
-              {job.userEmail} / {job.mode === "EDIT" ? `编辑 ${job.inputImageCount} 图` : "文生图"} / {job.errorCode ?? "no error"} / upstream {job.upstreamStatus ?? "-"} / 生成 {formatDuration(job.generationDurationMs)}
+              {job.userEmail} / {jobModeLabel(job.mode, job.inputImageCount)} / {job.size} / {qualityLabel(job.quality)} / {outputFormatLabel(job.outputFormat)} / {errorCodeLabel(job.errorCode)} / 上游 {job.upstreamStatus ?? "-"} / 生成 {formatDuration(job.generationDurationMs)}
             </p>
-            {job.upstreamRequestId ? <p className="muted">request {job.upstreamRequestId}</p> : null}
+            {job.upstreamRequestId ? <p className="muted">请求 {job.upstreamRequestId}</p> : null}
           </div>
           <div className="action-row">
-            <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(job.id)} aria-label="复制 Job ID">
+            <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(job.id)} aria-label="复制任务编号">
               <Copy className="h-4 w-4" />
             </Button>
             <Button variant="destructive" onClick={() => deleteJob(job.id)}>删除图片</Button>

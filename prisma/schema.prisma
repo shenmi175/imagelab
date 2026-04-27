@@ -29,6 +29,13 @@ enum OutboxStatus {
   FAILED
 }
 
+enum FeedbackStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  IGNORED
+}
+
 model User {
   id            String   @id @default(cuid())
   name          String
@@ -46,6 +53,7 @@ model User {
   accounts  Account[]
   imageJobs ImageJob[]
   usageLogs UsageLog[]
+  feedbacks Feedback[]
 }
 
 model Session {
@@ -119,6 +127,9 @@ model ImageJob {
   size         String
   quality      String
   outputFormat String
+  outputCompression Int?
+  background   String @default("auto")
+  moderation   String @default("auto")
   inputImages  Json?
 
   status     JobStatus @default(PENDING_ENQUEUE)
@@ -158,6 +169,7 @@ model ImageJob {
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageLogs UsageLog[]
   outbox    QueueOutbox?
+  feedbacks Feedback[]
 
   @@index([userId, createdAt])
   @@index([userId, status])
@@ -193,6 +205,34 @@ model UsageLog {
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   imageJob ImageJob? @relation(fields: [imageJobId], references: [id], onDelete: SetNull)
 
+  @@index([userId, createdAt])
+  @@index([imageJobId])
+}
+
+model Feedback {
+  id         String  @id @default(cuid())
+  userId     String
+  imageJobId String?
+
+  type    String
+  message String
+  contact String?
+  pageUrl String?
+
+  status    FeedbackStatus @default(OPEN)
+  adminNote String?
+
+  requestIpHash String?
+  userAgent     String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  imageJob ImageJob? @relation(fields: [imageJobId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
   @@index([userId, createdAt])
   @@index([imageJobId])
 }

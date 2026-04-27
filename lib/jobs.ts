@@ -35,6 +35,10 @@ export async function createImageJob(input: {
   prompt: string;
   size: string;
   quality: string;
+  outputFormat?: string;
+  outputCompression?: number | null;
+  background?: string;
+  moderation?: string;
   inputImages?: PendingInputImage[];
 }) {
   if (input.user.isDisabled) throw new ApiError("USER_DISABLED", "账号已被禁用", 403);
@@ -81,6 +85,7 @@ export async function createImageJob(input: {
           where: {
             userId: user.id,
             quotaDate: currentQuotaDate,
+            status: { not: JobStatus.FAILED },
             quotaCharged: true,
             quotaRefundedAt: null
           }
@@ -120,7 +125,10 @@ export async function createImageJob(input: {
           prompt: input.prompt,
           size: input.size,
           quality: input.quality,
-          outputFormat: env.defaultImageFormat,
+          outputFormat: input.outputFormat ?? env.defaultImageFormat,
+          outputCompression: input.outputCompression ?? null,
+          background: input.background ?? env.defaultImageBackground,
+          moderation: input.moderation ?? env.defaultImageModeration,
           inputImages: storedInputImages.length ? storedInputImages : undefined,
           status: JobStatus.PENDING_ENQUEUE,
           quotaDate: currentQuotaDate,
@@ -167,6 +175,7 @@ export async function remainingQuota(user: { id: string; role: UserRole; dailyQu
     where: {
       userId: user.id,
       quotaDate: quotaDate(),
+      status: { not: JobStatus.FAILED },
       quotaCharged: true,
       quotaRefundedAt: null
     }
@@ -183,6 +192,10 @@ export function publicJob(job: {
   status: JobStatus;
   size: string;
   quality: string;
+  outputFormat: string;
+  outputCompression: number | null;
+  background: string;
+  moderation: string;
   attempts: number;
   createdAt: Date;
   queuedAt: Date | null;
@@ -205,6 +218,10 @@ export function publicJob(job: {
     statusLabel: statusLabel(job.status),
     size: job.size,
     quality: job.quality,
+    outputFormat: job.outputFormat,
+    outputCompression: job.outputCompression,
+    background: job.background,
+    moderation: job.moderation,
     attempts: job.attempts,
     createdAt: job.createdAt,
     queuedAt: job.queuedAt,

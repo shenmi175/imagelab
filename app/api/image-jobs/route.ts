@@ -6,7 +6,7 @@ import { ApiError, assertSameOrigin, jsonError, jsonOk, requestIpHash } from "@/
 import { createImageJob, publicJob, type PendingInputImage } from "@/lib/jobs";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
-import { validatePrompt, validateQuality, validateSize } from "@/lib/validation";
+import { validateBackground, validateModeration, validateOutputCompression, validateOutputFormat, validatePrompt, validateQuality, validateSize } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -82,6 +82,10 @@ export async function POST(request: Request) {
     let prompt: string;
     let size: string;
     let quality: string;
+    let outputFormat: string;
+    let outputCompression: number | null;
+    let background: string;
+    let moderation: string;
     let inputImages: PendingInputImage[];
 
     if (contentType.includes("multipart/form-data")) {
@@ -89,16 +93,24 @@ export async function POST(request: Request) {
       prompt = validatePrompt(formString(formData, "prompt"));
       size = validateSize(formString(formData, "size"));
       quality = validateQuality(formString(formData, "quality"));
+      outputFormat = validateOutputFormat(formString(formData, "output_format") ?? formString(formData, "outputFormat"));
+      outputCompression = validateOutputCompression(outputFormat, formString(formData, "output_compression") ?? formString(formData, "outputCompression"));
+      background = validateBackground(formString(formData, "background"));
+      moderation = validateModeration(formString(formData, "moderation"));
       inputImages = await uploadedImages(formData);
     } else {
       const body = await request.json();
       prompt = validatePrompt(body.prompt);
       size = validateSize(body.size);
       quality = validateQuality(body.quality);
+      outputFormat = validateOutputFormat(body.output_format ?? body.outputFormat);
+      outputCompression = validateOutputCompression(outputFormat, body.output_compression ?? body.outputCompression);
+      background = validateBackground(body.background);
+      moderation = validateModeration(body.moderation);
       inputImages = [];
     }
 
-    const job = await createImageJob({ user, prompt, size, quality, inputImages });
+    const job = await createImageJob({ user, prompt, size, quality, outputFormat, outputCompression, background, moderation, inputImages });
     return jsonOk({ ...publicJob(job), message: "任务已创建" }, 201);
   } catch (error) {
     return jsonError(error);

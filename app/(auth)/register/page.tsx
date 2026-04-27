@@ -51,13 +51,12 @@ export default function RegisterPage() {
 
       <form className="auth-panel card" onSubmit={submit}>
         <div className="auth-form-header">
-          <p className="muted">Create access</p>
           <h2>注册</h2>
           <p className="muted">输入邀请码创建体验站账号。</p>
         </div>
         <label className="auth-field">
           <span>邮箱</span>
-          <input className="input" placeholder="you@example.com" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <input className="input" placeholder="邮箱地址" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
         </label>
         <label className="auth-field">
           <span>密码</span>

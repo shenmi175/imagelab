@@ -39,7 +39,7 @@ function loadTurnstileScript() {
     script.async = true;
     script.defer = true;
     script.dataset.turnstileScript = "true";
-    script.onerror = () => reject(new Error("Turnstile 加载失败"));
+    script.onerror = () => reject(new Error("人机验证加载失败"));
     document.head.appendChild(script);
   });
 
@@ -83,7 +83,7 @@ export function Turnstile({ action, onToken }: { action: string; onToken: (token
         });
       })
       .catch((error) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "Turnstile 加载失败");
+        if (active) setLoadError(error instanceof Error ? error.message : "人机验证加载失败");
       });
 
     return () => {

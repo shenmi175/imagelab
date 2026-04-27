@@ -83,6 +83,7 @@ services:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     container_name: image-site-worker
     command: npm run worker
+    stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-20m}
     env_file:
       - .env
     volumes:

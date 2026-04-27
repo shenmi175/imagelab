@@ -27,11 +27,16 @@ export type AdminJob = PublicJob & {
 
 export type AdminStats = {
   users: number;
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
   todayJobs: number;
   completedToday: number;
   failedToday: number;
   queuedJobs: number;
   runningJobs: number;
+  openFeedback: number;
+  reviewingFeedback: number;
   activeWorkers: number;
   averageGenerationDurationMs: number;
   averageQueueDurationMs: number;

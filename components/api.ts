@@ -30,6 +30,10 @@ export type PublicJob = {
   statusLabel: string;
   size: string;
   quality: string;
+  outputFormat: string;
+  outputCompression?: number | null;
+  background: string;
+  moderation: string;
   attempts: number;
   createdAt: string;
   queuedAt?: string | null;
@@ -50,4 +54,45 @@ export type PublicJob = {
 export type MeResponse = {
   user: { id: string; email: string; role: "USER" | "ADMIN"; dailyQuota: number } | null;
   remainingQuota?: number;
+};
+
+export type AdminFeedback = {
+  id: string;
+  userId: string;
+  imageJobId?: string | null;
+  type: string;
+  message: string;
+  contact?: string | null;
+  pageUrl?: string | null;
+  status: "OPEN" | "REVIEWING" | "RESOLVED" | "IGNORED";
+  adminNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+  user: { email: string };
+  imageJob?: {
+    id: string;
+    prompt: string;
+    status: PublicJob["status"];
+    errorCode?: string | null;
+    upstreamStatus?: number | null;
+    upstreamRequestId?: string | null;
+  } | null;
+};
+
+export type AdminUsageLog = {
+  id: number;
+  userId: string;
+  imageJobId?: string | null;
+  action: string;
+  status: string;
+  detail?: string | null;
+  createdAt: string;
+  user: { email: string };
+  imageJob?: {
+    id: string;
+    prompt: string;
+    status: PublicJob["status"];
+    errorCode?: string | null;
+  } | null;
 };

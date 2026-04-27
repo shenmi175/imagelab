@@ -1,4 +1,5 @@
 import { JobStatus } from "@prisma/client";
+import path from "node:path";
 import { requireUser } from "@/lib/auth";
 import { ApiError, jsonError } from "@/lib/http";
 import { getAuthorizedJob } from "@/lib/jobs";
@@ -16,10 +17,11 @@ export async function GET(_request: Request, context: any) {
     }
     if (job.resultDeletedAt) throw new ApiError("IMAGE_EXPIRED", "图片已过期", 404);
     const buffer = await readImageFile(job.resultPath);
+    const ext = path.extname(job.resultPath).replace(".", "") || "png";
     return new Response(buffer, {
       headers: {
         "Content-Type": job.resultMime ?? "image/png",
-        "Content-Disposition": `inline; filename="${job.id}.png"`,
+        "Content-Disposition": `inline; filename="${job.id}.${ext}"`,
         "Cache-Control": "private, max-age=300"
       }
     });

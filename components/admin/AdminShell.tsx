@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Image, KeyRound, Menu, ShieldCheck, Sparkles, UserRound, UsersRound, X } from "lucide-react";
+import { Activity, Image, KeyRound, Menu, MessageSquare, ScrollText, ShieldCheck, UserRound, UsersRound, X } from "lucide-react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch, type MeResponse } from "@/components/api";
@@ -14,17 +14,25 @@ type AdminShellProps = {
   children: React.ReactNode;
 };
 
+function roleLabel(role: string) {
+  return role === "ADMIN" ? "管理员" : "用户";
+}
+
 const navItems = [
   { href: "/admin", label: "用户总览", icon: UsersRound },
   { href: "/admin/images", label: "用户图片", icon: Image },
   { href: "/admin/invites", label: "邀请码", icon: KeyRound },
-  { href: "/admin/jobs", label: "任务运维", icon: Activity }
+  { href: "/admin/jobs", label: "任务运维", icon: Activity },
+  { href: "/admin/feedback", label: "用户反馈", icon: MessageSquare },
+  { href: "/admin/logs", label: "操作日志", icon: ScrollText }
 ];
 
 function adminTitle(pathname: string) {
   if (pathname.startsWith("/admin/images")) return "用户图片";
   if (pathname.startsWith("/admin/invites")) return "邀请码管理";
   if (pathname.startsWith("/admin/jobs")) return "任务运维";
+  if (pathname.startsWith("/admin/feedback")) return "用户反馈";
+  if (pathname.startsWith("/admin/logs")) return "操作日志";
   return "用户总览";
 }
 
@@ -44,7 +52,7 @@ export function AdminShell({ initialUser, children }: AdminShellProps) {
   const sidebar = (
     <aside className="admin-sidebar card">
       <div className="admin-sidebar-brand">
-        <Link href="/admin" className="brand">Image Lab Ops</Link>
+        <Link href="/admin" className="brand">图像运维台</Link>
         <Button className="mobile-only" type="button" variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} aria-label="关闭导航">
           <X className="h-4 w-4" />
         </Button>
@@ -76,11 +84,7 @@ export function AdminShell({ initialUser, children }: AdminShellProps) {
       </nav>
 
       <div className="admin-sidebar-foot">
-        <p className="muted">用户、图片、邀请码和任务队列集中在这里处理。</p>
-        <Link className="admin-workspace-link" href="/generate">
-          <Sparkles className="h-4 w-4" />
-          图像生成工作台
-        </Link>
+        <p className="muted">用户、图片、邀请码、任务、反馈和日志集中在这里处理。</p>
       </div>
     </aside>
   );
@@ -97,16 +101,11 @@ export function AdminShell({ initialUser, children }: AdminShellProps) {
               <Menu className="h-4 w-4" />
             </Button>
             <div>
-              <p className="muted">Operations</p>
               <strong>{adminTitle(pathname)}</strong>
             </div>
           </div>
 
           <div className="admin-topbar-actions">
-            <Link className="button secondary" href="/generate">
-              <Sparkles className="h-4 w-4" />
-              工作台
-            </Link>
             <ThemeToggle />
             <details className="user-menu">
               <summary>
@@ -114,7 +113,7 @@ export function AdminShell({ initialUser, children }: AdminShellProps) {
                 <span>{initialUser.email}</span>
               </summary>
               <div className="user-menu-panel card">
-                <p className="muted">{initialUser.role}</p>
+                <p className="muted">{roleLabel(initialUser.role)}</p>
                 <button type="button" onClick={logout}>退出登录</button>
               </div>
             </details>

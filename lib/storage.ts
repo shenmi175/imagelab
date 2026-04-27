@@ -18,20 +18,13 @@ export type StoredInputImage = {
   bytes: number;
 };
 
-export function assertPng(buffer: Buffer) {
-  if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new Error("Generated image is too large.");
-  }
-  if (buffer.length < PNG_MAGIC.length || !buffer.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
-    throw new Error("Generated image is not a valid PNG.");
-  }
-}
+export type StoredGeneratedImage = {
+  path: string;
+  mime: string;
+  ext: string;
+};
 
-function detectInputImage(buffer: Buffer, mime?: string) {
-  if (buffer.length > MAX_INPUT_IMAGE_BYTES) {
-    throw new ApiError("INVALID_INPUT", "上传图片不能超过 20MB");
-  }
-
+function detectImage(buffer: Buffer) {
   if (buffer.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
     return { mime: "image/png", ext: "png" };
   }
@@ -45,12 +38,42 @@ function detectInputImage(buffer: Buffer, mime?: string) {
   ) {
     return { mime: "image/webp", ext: "webp" };
   }
+  return null;
+}
 
-  if (mime && ["image/png", "image/jpeg", "image/webp"].includes(mime)) {
-    throw new ApiError("INVALID_INPUT", "上传图片内容和 MIME 类型不匹配");
+export function assertPng(buffer: Buffer) {
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error("生成结果文件过大。");
+  }
+  if (buffer.length < PNG_MAGIC.length || !buffer.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) {
+    throw new Error("生成结果不是有效图片。");
+  }
+}
+
+function detectGeneratedImage(buffer: Buffer) {
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error("生成结果文件过大。");
+  }
+  const detected = detectImage(buffer);
+  if (!detected) {
+    throw new Error("生成结果不是有效图片。");
+  }
+  return detected;
+}
+
+function detectInputImage(buffer: Buffer, mime?: string) {
+  if (buffer.length > MAX_INPUT_IMAGE_BYTES) {
+    throw new ApiError("INVALID_INPUT", "上传图片不能超过 20MB");
   }
 
-  throw new ApiError("INVALID_INPUT", "仅支持 PNG、JPG、WEBP 图片上传");
+  const detected = detectImage(buffer);
+  if (detected) return detected;
+
+  if (mime && ["image/png", "image/jpeg", "image/webp"].includes(mime)) {
+    throw new ApiError("INVALID_INPUT", "上传图片内容和文件类型不匹配");
+  }
+
+  throw new ApiError("INVALID_INPUT", "仅支持常见图片格式上传");
 }
 
 export function assertSafeStoragePath(filePath: string) {
@@ -62,21 +85,25 @@ export function assertSafeStoragePath(filePath: string) {
   return resolved;
 }
 
-export async function saveImageFile(jobId: string, buffer: Buffer, format = "png") {
-  assertPng(buffer);
+export async function saveImageFile(jobId: string, buffer: Buffer): Promise<StoredGeneratedImage> {
+  const detected = detectGeneratedImage(buffer);
   const date = new Date().toISOString().slice(0, 10);
   const dir = path.join(env.imageStorageDir, date);
   await fs.mkdir(dir, { recursive: true });
 
-  const finalPath = path.join(dir, `${jobId}.${format}`);
+  const finalPath = path.join(dir, `${jobId}.${detected.ext}`);
   const tmpPath = `${finalPath}.${process.pid}.tmp`;
   await fs.writeFile(tmpPath, buffer, { flag: "wx" });
   await fs.rename(tmpPath, finalPath);
-  return finalPath;
+  return {
+    path: finalPath,
+    mime: detected.mime,
+    ext: detected.ext
+  };
 }
 
 export async function saveThumbnailFile(jobId: string, buffer: Buffer) {
-  assertPng(buffer);
+  detectGeneratedImage(buffer);
   const date = new Date().toISOString().slice(0, 10);
   const dir = path.join(env.imageStorageDir, date, "thumbs");
   await fs.mkdir(dir, { recursive: true });

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Image, LayoutDashboard, Menu, Shield, Sparkles, UserRound, X } from "lucide-react";
+import { Image, LayoutDashboard, Menu, Sparkles, UserRound, X } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, type MeResponse } from "@/components/api";
+import { FeedbackButton } from "@/components/app/FeedbackButton";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +15,10 @@ type AppShellProps = {
   initialRemainingQuota?: number;
   children: React.ReactNode;
 };
+
+function roleLabel(role: string) {
+  return role === "ADMIN" ? "管理员" : "用户";
+}
 
 export function AppShell({ initialUser, initialRemainingQuota, children }: AppShellProps) {
   const router = useRouter();
@@ -33,8 +38,7 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
   const navItems = [
     { href: "/generate", label: "生成", icon: Sparkles },
     { href: "/gallery", label: "图库", icon: Image },
-    { href: "/jobs", label: "任务", icon: LayoutDashboard },
-    ...(user.role === "ADMIN" ? [{ href: "/admin", label: "运维", icon: Shield }] : [])
+    { href: "/jobs", label: "任务", icon: LayoutDashboard }
   ];
 
   async function logout() {
@@ -47,10 +51,11 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
   function prefetchRoute(href: string) {
     router.prefetch(href);
     if (href === "/gallery" || href === "/jobs") {
+      const isGallery = href === "/gallery";
       void queryClient.prefetchInfiniteQuery({
-        queryKey: ["image-jobs", ""],
+        queryKey: ["image-jobs", isGallery ? "gallery" : "jobs", isGallery ? "COMPLETED" : ""],
         initialPageParam: null as string | null,
-        queryFn: () => apiFetch<{ items: unknown[]; nextCursor?: string | null }>("/api/image-jobs?limit=24")
+        queryFn: () => apiFetch<{ items: unknown[]; nextCursor?: string | null }>(isGallery ? "/api/image-jobs?status=COMPLETED&limit=24" : "/api/image-jobs?limit=24")
       });
     }
   }
@@ -58,7 +63,7 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
   const sidebar = (
     <aside className="app-sidebar card">
       <div className="sidebar-brand">
-        <Link href="/generate" className="brand">Image Lab</Link>
+        <Link href="/generate" className="brand">图像实验室</Link>
         <Button className="mobile-only" type="button" variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} aria-label="关闭导航">
           <X className="h-4 w-4" />
         </Button>
@@ -100,11 +105,11 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
               <Menu className="h-4 w-4" />
             </Button>
             <div>
-              <p className="muted">Workspace</p>
               <strong>图像生成工作台</strong>
             </div>
           </div>
           <div className="topbar-actions">
+            <FeedbackButton compact />
             <div className="quota-pill">
               <span>今日额度</span>
               <strong>{remainingQuota ?? "-"}</strong>
@@ -116,7 +121,7 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
                 <span>{user.email}</span>
               </summary>
               <div className="user-menu-panel card">
-                <p className="muted">{user.role}</p>
+                <p className="muted">{roleLabel(user.role)}</p>
                 <button type="button" onClick={logout}>退出登录</button>
               </div>
             </details>

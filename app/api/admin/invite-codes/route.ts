@@ -10,10 +10,16 @@ function makeCode() {
   return crypto.randomBytes(9).toString("base64url").toUpperCase();
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireAdmin();
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
     const codes = await prisma.inviteCode.findMany({
+      where: {
+        ...(status === "unused" ? { usedAt: null } : {}),
+        ...(status === "used" ? { usedAt: { not: null } } : {})
+      },
       orderBy: { createdAt: "desc" },
       take: 100
     });

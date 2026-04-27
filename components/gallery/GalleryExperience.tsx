@@ -12,7 +12,7 @@ import { JobDetailDrawer } from "@/components/job/JobDetailDrawer";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { JobTimer } from "@/components/job/JobTimer";
 import { formatDateTime, formatDuration } from "@/lib/duration";
-import { terminalStatuses } from "@/lib/status-labels";
+import { jobModeLabel, outputFormatLabel, qualityLabel, terminalStatuses } from "@/lib/status-labels";
 
 const filters = [
   { value: "", label: "全部" },
@@ -33,17 +33,18 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [selectedJob, setSelectedJob] = useState<PublicJob | null>(null);
+  const effectiveStatus = mode === "gallery" ? "COMPLETED" : status;
 
   const queryBase = useMemo(() => {
     const params = new URLSearchParams();
-    if (status) params.set("status", status);
+    if (effectiveStatus) params.set("status", effectiveStatus);
     params.set("limit", "24");
     const suffix = params.toString();
     return `/api/image-jobs${suffix ? `?${suffix}` : ""}`;
-  }, [status]);
+  }, [effectiveStatus]);
 
   const jobsQuery = useInfiniteQuery({
-    queryKey: ["image-jobs", status],
+    queryKey: ["image-jobs", mode, effectiveStatus],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => {
       const separator = queryBase.includes("?") ? "&" : "?";
@@ -75,17 +76,16 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
 
   function copyPrompt(job: PublicJob) {
     navigator.clipboard.writeText(job.prompt);
-    toast.success("Prompt 已复制");
+    toast.success("提示词已复制");
   }
 
   return (
     <main className="page-stack">
       <section className="workspace-hero card">
         <div>
-          <p className="muted">{mode === "gallery" ? "Gallery" : "Jobs"}</p>
           <h1>{mode === "gallery" ? "图片图库" : "任务列表"}</h1>
           <p className="muted">
-            {mode === "gallery" ? `已加载 ${jobs.length} 个任务，其中 ${completedCount} 张图片可查看。` : "查看所有任务状态、耗时和失败原因。"}
+            {mode === "gallery" ? `已加载 ${completedCount} 张已完成图片。` : "查看所有任务状态、耗时和失败原因。"}
           </p>
         </div>
         <Link className="button" href="/generate">
@@ -94,13 +94,15 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
         </Link>
       </section>
 
-      <div className="filter-pills">
-        {filters.map((filter) => (
-          <button className={status === filter.value ? "filter-pill active" : "filter-pill"} key={filter.value} onClick={() => setStatus(filter.value)}>
-            {filter.label}
-          </button>
-        ))}
-      </div>
+      {mode === "jobs" ? (
+        <div className="filter-pills">
+          {filters.map((filter) => (
+            <button className={status === filter.value ? "filter-pill active" : "filter-pill"} key={filter.value} onClick={() => setStatus(filter.value)}>
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <StorageNotice />
 
@@ -134,14 +136,14 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
                   <span className="muted">{formatDuration(job.generationDurationMs)}</span>
                 </div>
                 <p>{job.prompt.slice(0, 96)}</p>
-                <p className="muted">{job.mode === "EDIT" ? `编辑 / 参考图 ${job.inputImageCount}` : "文生图"} / {job.size} / {job.quality} / {formatDateTime(job.createdAt)}</p>
+                <p className="muted">{jobModeLabel(job.mode, job.inputImageCount)} / {job.size} / {qualityLabel(job.quality)} / {outputFormatLabel(job.outputFormat)} / {formatDateTime(job.createdAt)}</p>
                 <div className="action-row" onClick={(event) => event.stopPropagation()}>
                   {job.downloadUrl ? (
                     <a className="icon-button" href={job.downloadUrl} aria-label="下载图片">
                       <Download className="h-4 w-4" />
                     </a>
                   ) : null}
-                  <button className="icon-button" onClick={() => copyPrompt(job)} aria-label="复制 Prompt">
+                  <button className="icon-button" onClick={() => copyPrompt(job)} aria-label="复制提示词">
                     <Copy className="h-4 w-4" />
                   </button>
                   <button className="icon-button" onClick={() => rerunMutation.mutate(job)} aria-label="重新生成">
@@ -160,7 +162,7 @@ export function GalleryExperience({ mode = "gallery" }: { mode?: "gallery" | "jo
                 <div>
                   <JobStatusBadge job={job} />
                   <p>{job.prompt.slice(0, 160)}</p>
-                  <p className="muted">{job.mode === "EDIT" ? `编辑 / 参考图 ${job.inputImageCount}` : "文生图"} / {job.size} / {job.quality} / 创建 {formatDateTime(job.createdAt)}</p>
+                  <p className="muted">{jobModeLabel(job.mode, job.inputImageCount)} / {job.size} / {qualityLabel(job.quality)} / {outputFormatLabel(job.outputFormat)} / 创建 {formatDateTime(job.createdAt)}</p>
                   {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
                 </div>
                 <div className="task-row-metrics">

@@ -1,4 +1,5 @@
 import { JobStatus } from "@prisma/client";
+import path from "node:path";
 import { requireUser } from "@/lib/auth";
 import { ApiError, jsonError } from "@/lib/http";
 import { getAuthorizedJob } from "@/lib/jobs";
@@ -20,10 +21,11 @@ export async function GET(_request: Request, context: any) {
     await prisma.usageLog.create({
       data: { userId: user.id, imageJobId: job.id, action: "DOWNLOAD", status: "OK" }
     });
+    const ext = path.extname(job.resultPath).replace(".", "") || "png";
     return new Response(buffer, {
       headers: {
         "Content-Type": job.resultMime ?? "image/png",
-        "Content-Disposition": `attachment; filename="${job.id}.png"`,
+        "Content-Disposition": `attachment; filename="${job.id}.${ext}"`,
         "Cache-Control": "private, max-age=300"
       }
     });

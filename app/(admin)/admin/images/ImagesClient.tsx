@@ -49,7 +49,6 @@ export default function ImagesClient({ initialUserId, initialEmail }: { initialU
     <main className="page-stack">
       <section className="workspace-hero card">
         <div>
-          <p className="muted">User images</p>
           <h1>用户图片</h1>
           <p className="muted">按用户查看生成图片、打开预览并删除图片文件。</p>
         </div>
@@ -72,12 +71,11 @@ export default function ImagesClient({ initialUserId, initialEmail }: { initialU
       <section className="card panel-section">
         <div className="section-heading">
           <div>
-            <p className="muted">Images</p>
             <h2>图片列表</h2>
           </div>
           <div className="search-box">
             <Search className="h-4 w-4" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索邮箱 / Prompt / Job ID" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索邮箱 / 提示词 / 任务编号" />
           </div>
         </div>
         <AdminStatusFilters status={status} onChange={setStatus} />

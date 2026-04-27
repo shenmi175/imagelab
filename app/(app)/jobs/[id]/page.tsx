@@ -6,12 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, RotateCcw } from "lucide-react";
 import { apiFetch, PublicJob } from "@/components/api";
+import { FeedbackButton } from "@/components/app/FeedbackButton";
 import { StorageNotice } from "@/components/app/StorageNotice";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
 import { JobTimeline } from "@/components/job/JobTimeline";
 import { JobTimer } from "@/components/job/JobTimer";
-import { terminalStatuses } from "@/lib/status-labels";
+import { jobModeLabel, outputFormatLabel, qualityLabel, terminalStatuses } from "@/lib/status-labels";
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
@@ -62,7 +63,7 @@ export default function JobDetailPage() {
               <JobTimer job={job} />
               <p>{job.prompt}</p>
               <p className="muted">
-                {job.model} / {job.mode === "EDIT" ? `图像编辑，参考图 ${job.inputImageCount} 张` : "文生图"} / {job.size} / {job.quality} / attempts {job.attempts}
+                {jobModeLabel(job.mode, job.inputImageCount)} / {job.size} / {qualityLabel(job.quality)} / {outputFormatLabel(job.outputFormat)}{job.outputCompression !== null && job.outputCompression !== undefined ? ` / 压缩 ${job.outputCompression}` : ""} / 第 {job.attempts} 次尝试
               </p>
               {job.displayError ? <p className="error-text">{job.displayError}</p> : null}
               <JobTimeline job={job} />
@@ -70,12 +71,13 @@ export default function JobDetailPage() {
                 {job.downloadUrl ? <a className="button" href={job.downloadUrl}>下载图片</a> : null}
                 <Button type="button" variant="secondary" onClick={() => navigator.clipboard.writeText(job.prompt)}>
                   <Copy className="h-4 w-4" />
-                  复制 Prompt
+                  复制提示词
                 </Button>
                 <Button type="button" variant="outline" onClick={() => rerunMutation.mutate(job)}>
                   <RotateCcw className="h-4 w-4" />
                   重新生成
                 </Button>
+                <FeedbackButton imageJobId={job.id} defaultType={job.status === "FAILED" ? "GENERATION_FAILED" : "GENERAL"} label="反馈" />
               </div>
             </div>
           </div>

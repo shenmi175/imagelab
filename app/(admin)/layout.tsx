@@ -17,7 +17,6 @@ export default async function AdminRootLayout({ children }: { children: React.Re
 
     return (
       <main className="admin-auth-required card">
-        <p className="muted">Operations console</p>
         <h1>需要管理员权限</h1>
         <p className="muted">当前账号不能访问运维控制台。</p>
         <Link className="button secondary" href="/generate">返回图像工作台</Link>

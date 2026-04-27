@@ -7,14 +7,24 @@ import type { InviteCode } from "@/components/admin/AdminTypes";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/duration";
 
+const inviteStatusOptions = [
+  { value: "", label: "全部" },
+  { value: "unused", label: "未使用" },
+  { value: "used", label: "已使用" }
+] as const;
+
+type InviteStatus = (typeof inviteStatusOptions)[number]["value"];
+
 export default function InvitesClient() {
   const [items, setItems] = useState<InviteCode[]>([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [status, setStatus] = useState<InviteStatus>("");
 
   async function load() {
     try {
-      const data = await apiFetch<{ items: InviteCode[] }>("/api/admin/invite-codes");
+      const suffix = status ? `?status=${status}` : "";
+      const data = await apiFetch<{ items: InviteCode[] }>(`/api/admin/invite-codes${suffix}`);
       setItems(data.items);
       setError("");
     } catch (err) {
@@ -47,13 +57,12 @@ export default function InvitesClient() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [status]);
 
   return (
     <main className="page-stack">
       <section className="workspace-hero card">
         <div>
-          <p className="muted">Invite codes</p>
           <h1>邀请码管理</h1>
           <p className="muted">单独管理注册邀请码，未使用的邀请码可以复制或删除。</p>
         </div>
@@ -69,13 +78,20 @@ export default function InvitesClient() {
         </div>
       </section>
 
+      <div className="filter-pills">
+        {inviteStatusOptions.map((option) => (
+          <button className={status === option.value ? "filter-pill active" : "filter-pill"} key={option.value} onClick={() => setStatus(option.value)}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <section className="card panel-section">
         <div className="section-heading">
           <div>
-            <p className="muted">Codes</p>
             <h2>邀请码列表</h2>
           </div>
-          <span className="muted">最多显示最近 100 个</span>
+          <span className="muted">最多显示最近 100 个{status ? ` / ${inviteStatusOptions.find((option) => option.value === status)?.label}` : ""}</span>
         </div>
         {error ? <p className="error-text">{error}</p> : null}
         <div className="table-list">

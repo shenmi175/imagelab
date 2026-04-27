@@ -19,12 +19,12 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await apiFetch("/api/auth/login", {
+      const data = await apiFetch<{ user: { role: "USER" | "ADMIN" } }>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, turnstileToken })
       });
-      window.location.assign("/generate");
+      window.location.assign(data.user.role === "ADMIN" ? "/admin" : "/generate");
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
       setTurnstileToken("");
@@ -50,13 +50,12 @@ export default function LoginPage() {
 
       <form className="auth-panel card" onSubmit={submit}>
         <div className="auth-form-header">
-          <p className="muted">Secure access</p>
           <h2>登录</h2>
           <p className="muted">使用账号进入图像生成体验站。</p>
         </div>
         <label className="auth-field">
           <span>邮箱</span>
-          <input className="input" placeholder="you@example.com" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <input className="input" placeholder="邮箱地址" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
         </label>
         <label className="auth-field">
           <span>密码</span>
