@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/components/api";
-import { AdminTabs } from "@/components/admin/AdminTabs";
 import type { InviteCode } from "@/components/admin/AdminTypes";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/duration";
@@ -69,8 +68,6 @@ export default function InvitesClient() {
           </Button>
         </div>
       </section>
-
-      <AdminTabs />
 
       <section className="card panel-section">
         <div className="section-heading">

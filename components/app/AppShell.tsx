@@ -34,7 +34,7 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
     { href: "/generate", label: "生成", icon: Sparkles },
     { href: "/gallery", label: "图库", icon: Image },
     { href: "/jobs", label: "任务", icon: LayoutDashboard },
-    ...(user.role === "ADMIN" ? [{ href: "/admin", label: "管理", icon: Shield }] : [])
+    ...(user.role === "ADMIN" ? [{ href: "/admin", label: "运维", icon: Shield }] : [])
   ];
 
   async function logout() {
@@ -101,7 +101,7 @@ export function AppShell({ initialUser, initialRemainingQuota, children }: AppSh
             </Button>
             <div>
               <p className="muted">Workspace</p>
-              <strong>{pathname.startsWith("/admin") ? "管理后台" : "图像生成工作台"}</strong>
+              <strong>图像生成工作台</strong>
             </div>
           </div>
           <div className="topbar-actions">

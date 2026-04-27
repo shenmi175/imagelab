@@ -1,30 +1,25 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { apiFetch } from "@/components/api";
 import { AdminJobList } from "@/components/admin/AdminJobList";
 import { AdminStatusFilters } from "@/components/admin/AdminStatusFilters";
-import { AdminTabs } from "@/components/admin/AdminTabs";
-import { Input } from "@/components/ui/input";
 import type { AdminJob } from "@/components/admin/AdminTypes";
+import { Input } from "@/components/ui/input";
 
-export default function ImagesClient({ initialUserId, initialEmail }: { initialUserId?: string; initialEmail?: string }) {
+export default function JobsClient() {
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  const [userId, setUserId] = useState(initialUserId ?? "");
-  const [email, setEmail] = useState(initialEmail ?? "");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (search.trim()) params.set("q", search.trim());
-    if (userId) params.set("userId", userId);
     return params.toString();
-  }, [search, status, userId]);
+  }, [search, status]);
 
   async function load() {
     try {
@@ -41,42 +36,21 @@ export default function ImagesClient({ initialUserId, initialEmail }: { initialU
     void load();
   }, [queryString]);
 
-  function clearUser() {
-    setUserId("");
-    setEmail("");
-  }
-
   return (
     <main className="page-stack">
       <section className="workspace-hero card">
         <div>
-          <p className="muted">User images</p>
-          <h1>用户图片</h1>
-          <p className="muted">按用户查看生成图片、打开预览并删除图片文件。</p>
+          <p className="muted">Job operations</p>
+          <h1>任务管理</h1>
+          <p className="muted">集中查看任务状态、上游错误、耗时和删除异常或过期图片。</p>
         </div>
-        <Link className="button secondary" href="/admin">返回用户管理</Link>
       </section>
-
-      <AdminTabs />
-
-      {email || userId ? (
-        <div className="storage-notice compact">
-          <strong>当前用户：{email || userId}</strong>
-          <span>
-            只显示该用户的任务。
-            <button className="inline-action" type="button" onClick={clearUser}>
-              <X className="h-3 w-3" />
-              查看全部用户
-            </button>
-          </span>
-        </div>
-      ) : null}
 
       <section className="card panel-section">
         <div className="section-heading">
           <div>
-            <p className="muted">Images</p>
-            <h2>图片列表</h2>
+            <p className="muted">Jobs</p>
+            <h2>任务列表</h2>
           </div>
           <div className="search-box">
             <Search className="h-4 w-4" />
@@ -85,7 +59,7 @@ export default function ImagesClient({ initialUserId, initialEmail }: { initialU
         </div>
         <AdminStatusFilters status={status} onChange={setStatus} />
         {error ? <p className="error-text">{error}</p> : null}
-        <AdminJobList jobs={jobs} onReload={load} emptyText="暂无图片任务。" />
+        <AdminJobList jobs={jobs} onReload={load} emptyText="暂无任务。" />
       </section>
     </main>
   );

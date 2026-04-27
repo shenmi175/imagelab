@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { apiFetch } from "@/components/api";
-import { AdminTabs } from "@/components/admin/AdminTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDateTime, formatDuration } from "@/lib/duration";
@@ -65,9 +64,9 @@ export default function AdminClient() {
     <main className="page-stack">
       <section className="workspace-hero card">
         <div>
-          <p className="muted">Admin console</p>
+          <p className="muted">Operations overview</p>
           <h1>后台控制台</h1>
-          <p className="muted">后台已按用户、用户图片、邀请码、任务管理分区。</p>
+          <p className="muted">集中查看平台运行状态，管理用户额度和账号状态。</p>
         </div>
         {queueBoardUrl ? (
           <a className="button secondary" href={queueBoardUrl} target="_blank" rel="noreferrer">
@@ -76,8 +75,6 @@ export default function AdminClient() {
           </a>
         ) : null}
       </section>
-
-      <AdminTabs />
 
       {error ? <p className="error-text">{error}</p> : null}
 
