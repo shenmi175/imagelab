@@ -87,15 +87,15 @@ async function encodeInputAsJpeg(buffer: Buffer, edge: number, quality: number) 
     .toBuffer();
 }
 
-export async function optimizeInputImageForUpstream(buffer: Buffer, mime?: string) {
+export async function optimizeInputImageForUpstream(buffer: Buffer, mime?: string, options: { force?: boolean; maxBytes?: number } = {}) {
   const detected = detectInputImage(buffer, mime);
-  const maxBytes = Math.max(256_000, env.upstreamInputImageMaxBytes);
+  const maxBytes = Math.max(256_000, options.maxBytes ?? env.upstreamInputImageMaxBytes);
   const maxEdge = Math.max(MIN_UPSTREAM_INPUT_IMAGE_EDGE, env.upstreamInputImageMaxEdge);
   const initialQuality = Math.min(92, Math.max(MIN_UPSTREAM_INPUT_IMAGE_QUALITY, env.upstreamInputImageQuality));
   const metadata = await sharp(buffer, { failOn: "none" }).metadata();
   const maxDimension = Math.max(metadata.width ?? 0, metadata.height ?? 0);
 
-  if (buffer.length <= maxBytes && (!maxDimension || maxDimension <= maxEdge)) {
+  if (!options.force && buffer.length <= maxBytes && (!maxDimension || maxDimension <= maxEdge)) {
     return { buffer, mime: detected.mime, ext: detected.ext };
   }
 
@@ -175,23 +175,23 @@ export async function saveInputImageFile(input: {
   mime?: string;
   name?: string;
 }) {
-  const optimized = await optimizeInputImageForUpstream(input.buffer, input.mime);
+  const detected = detectInputImage(input.buffer, input.mime);
   const date = new Date().toISOString().slice(0, 10);
   const dir = path.join(env.imageStorageDir, date, input.jobId, "input");
   await fs.mkdir(dir, { recursive: true });
 
   const baseName = input.name ? path.parse(input.name).name : `input-${input.index}`;
   const safeName = baseName.replace(/[^\w.-]+/g, "_").slice(0, 80) || `input-${input.index}`;
-  const finalPath = path.join(dir, `${input.index}-${safeName}.${optimized.ext}`);
+  const finalPath = path.join(dir, `${input.index}-${safeName}.${detected.ext}`);
   const tmpPath = `${finalPath}.${process.pid}.tmp`;
-  await fs.writeFile(tmpPath, optimized.buffer, { flag: "wx" });
+  await fs.writeFile(tmpPath, input.buffer, { flag: "wx" });
   await fs.rename(tmpPath, finalPath);
 
   return {
     path: finalPath,
-    mime: optimized.mime,
-    name: `${safeName}.${optimized.ext}`,
-    bytes: optimized.buffer.length
+    mime: detected.mime,
+    name: `${safeName}.${detected.ext}`,
+    bytes: input.buffer.length
   } satisfies StoredInputImage;
 }
 

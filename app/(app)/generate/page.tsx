@@ -157,6 +157,10 @@ export default function GeneratePage() {
     }
   }
 
+  function removeInputImage(index: number) {
+    setInputImages((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
   const selectedSize = sizes.find((item) => item.value === size);
   const selectedQuality = qualities.find((item) => item.value === quality);
   const selectedFormat = outputFormats.find((item) => item.value === outputFormat);
@@ -191,6 +195,18 @@ export default function GeneratePage() {
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="例如：大胆图形插画风格的信息图，主体近乎照片写实，周围有结构化标注..."
             />
+            {previewUrls.length ? (
+              <div className="prompt-preview-strip" aria-label="已上传参考图">
+                {previewUrls.map((url, index) => (
+                  <div className="prompt-preview" key={url}>
+                    <img src={url} alt={`参考图 ${index + 1}`} decoding="async" />
+                    <button type="button" aria-label="移除图片" onClick={() => removeInputImage(index)}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="prompt-toolbar" aria-label="生成参数">
               <label className="prompt-upload">
                 <ImagePlus className="h-4 w-4" />
@@ -393,7 +409,7 @@ export default function GeneratePage() {
                         <button
                           type="button"
                           aria-label="移除图片"
-                          onClick={() => setInputImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                          onClick={() => removeInputImage(index)}
                         >
                           <X className="h-4 w-4" />
                         </button>

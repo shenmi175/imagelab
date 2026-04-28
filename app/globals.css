@@ -961,6 +961,47 @@ a {
   padding-bottom: 1rem;
 }
 
+.prompt-preview-strip {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  border-top: 1px solid hsl(var(--border) / 0.58);
+  background: hsl(var(--background) / 0.14);
+  padding: 0.65rem 0.8rem;
+}
+
+.prompt-preview {
+  position: relative;
+  flex: 0 0 4.35rem;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border) / 0.76);
+  border-radius: 14px;
+  background: hsl(var(--muted) / 0.34);
+}
+
+.prompt-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.prompt-preview button {
+  position: absolute;
+  right: 0.28rem;
+  top: 0.28rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 999px;
+  background: hsl(var(--card) / 0.86);
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
 .prompt-toolbar {
   display: flex;
   flex-wrap: wrap;

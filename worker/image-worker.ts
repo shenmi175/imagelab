@@ -60,6 +60,13 @@ async function claimJob(imageJobId: string) {
   return prisma.imageJob.findUnique({ where: { id: imageJobId } });
 }
 
+type ClaimedImageJob = NonNullable<Awaited<ReturnType<typeof claimJob>>>;
+type WorkerInputImage = {
+  buffer: Buffer;
+  mime: string;
+  name: string;
+};
+
 function toGenerationError(error: unknown) {
   if (error instanceof GenerationError) return error;
   if (error instanceof ApiError) {
@@ -74,7 +81,7 @@ function toGenerationError(error: unknown) {
   return new GenerationError("GENERATION_FAILED", String(error), false);
 }
 
-function imageRequestOptions(job: NonNullable<Awaited<ReturnType<typeof claimJob>>>) {
+function imageRequestOptions(job: ClaimedImageJob) {
   return {
     model: job.model,
     prompt: job.prompt,
@@ -87,7 +94,75 @@ function imageRequestOptions(job: NonNullable<Awaited<ReturnType<typeof claimJob
   };
 }
 
-async function handleJobFailure(job: NonNullable<Awaited<ReturnType<typeof claimJob>>>, error: unknown) {
+function fileNameWithExt(name: string, ext: string) {
+  const baseName = name.replace(/\.[^.]+$/, "") || "input";
+  return `${baseName}.${ext}`;
+}
+
+function isRequestTooLargeTransportError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const cause = "cause" in error && error.cause instanceof Error ? ` ${error.cause.message}` : "";
+  return /(^|\D)413(\D|$)|payload|entity too large|request body|body size|content length|too large/i.test(`${error.name} ${error.message}${cause}`);
+}
+
+async function readWorkerInputImages(inputImages: ReturnType<typeof parseStoredInputImages>) {
+  return Promise.all(
+    inputImages.map(async (image) => ({
+      buffer: await readImageFile(image.path),
+      mime: image.mime,
+      name: image.name
+    }))
+  );
+}
+
+async function compressInputImagesForRetry(inputImages: WorkerInputImage[]) {
+  const perImageBudget = Math.floor(env.upstreamInputImagesTotalMaxBytes / Math.max(inputImages.length, 1));
+  const maxBytes = Math.min(env.upstreamInputImageMaxBytes, perImageBudget);
+  return Promise.all(
+    inputImages.map(async (image) => {
+      const optimized = await optimizeInputImageForUpstream(image.buffer, image.mime, { force: true, maxBytes });
+      return {
+        buffer: optimized.buffer,
+        mime: optimized.mime,
+        name: fileNameWithExt(image.name, optimized.ext)
+      };
+    })
+  );
+}
+
+async function sendEditRequest(job: ClaimedImageJob, inputImages: WorkerInputImage[]) {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(imageRequestOptions(job))) {
+    formData.set(key, String(value));
+  }
+
+  for (const image of inputImages) {
+    formData.append("image[]", new Blob([new Uint8Array(image.buffer)], { type: image.mime }), image.name);
+  }
+
+  return fetch(`${env.sub2apiBaseUrl}/v1/images/edits`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.sub2apiApiKey}`
+    },
+    body: formData,
+    signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
+  });
+}
+
+async function markCompressedRetry(job: ClaimedImageJob, status?: number | null, requestId?: string | null) {
+  await prisma.imageJob.updateMany({
+    where: { id: job.id, status: JobStatus.RUNNING, workerId },
+    data: {
+      errorCode: null,
+      errorMessage: "原图请求失败，已自动压缩参考图后重试。",
+      upstreamStatus: status ?? undefined,
+      upstreamRequestId: requestId ?? undefined
+    }
+  });
+}
+
+async function handleJobFailure(job: ClaimedImageJob, error: unknown) {
   const generationError = toGenerationError(error);
   const canRetry = generationError.retryable && job.attempts < env.maxJobAttempts;
   const now = new Date();
@@ -140,27 +215,20 @@ async function processImageJob(payload: ImageGenerationPayload) {
     let response: Response;
 
     if (inputImages.length) {
-      const options = imageRequestOptions(job);
-      const formData = new FormData();
-      for (const [key, value] of Object.entries(options)) {
-        formData.set(key, String(value));
+      const originalInputImages = await readWorkerInputImages(inputImages);
+      try {
+        response = await sendEditRequest(job, originalInputImages);
+      } catch (error) {
+        if (!isRequestTooLargeTransportError(error)) throw error;
+        await markCompressedRetry(job);
+        response = await sendEditRequest(job, await compressInputImagesForRetry(originalInputImages));
       }
 
-      for (const image of inputImages) {
-        const buffer = await readImageFile(image.path);
-        const optimized = await optimizeInputImageForUpstream(buffer, image.mime);
-        const baseName = image.name.replace(/\.[^.]+$/, "");
-        formData.append("image[]", new Blob([new Uint8Array(optimized.buffer)], { type: optimized.mime }), `${baseName}.${optimized.ext}`);
+      if (response.status === 413) {
+        const originalRequestId = response.headers.get("x-request-id");
+        await markCompressedRetry(job, response.status, originalRequestId);
+        response = await sendEditRequest(job, await compressInputImagesForRetry(originalInputImages));
       }
-
-      response = await fetch(`${env.sub2apiBaseUrl}/v1/images/edits`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.sub2apiApiKey}`
-        },
-        body: formData,
-        signal: AbortSignal.timeout(env.upstreamTimeoutSeconds * 1000)
-      });
     } else {
       response = await fetch(`${env.sub2apiBaseUrl}/v1/images/generations`, {
         method: "POST",
@@ -204,6 +272,9 @@ async function processImageJob(payload: ImageGenerationPayload) {
         thumbnailPath: thumbnail?.path,
         thumbnailMime: thumbnail?.mime,
         thumbnailBytes: thumbnail?.bytes,
+        errorCode: null,
+        errorMessage: null,
+        upstreamStatus: null,
         upstreamRequestId,
         completedAt,
         workerId: null,
