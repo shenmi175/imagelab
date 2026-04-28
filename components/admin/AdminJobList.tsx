@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 import { apiFetch } from "@/components/api";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/job/JobStatusBadge";
@@ -52,6 +52,12 @@ export function AdminJobList({
             <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(job.id)} aria-label="复制任务编号">
               <Copy className="h-4 w-4" />
             </Button>
+            {job.downloadUrl ? (
+              <a className="button secondary" href={job.downloadUrl}>
+                <Download className="h-4 w-4" />
+                下载图片
+              </a>
+            ) : null}
             <Button variant="destructive" onClick={() => deleteJob(job.id)}>删除图片</Button>
           </div>
         </div>
